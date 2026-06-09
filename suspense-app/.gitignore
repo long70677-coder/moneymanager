@@ -2,6 +2,7 @@
 
 # database
 /data
+*.db
 
 # dependencies
 /node_modules
