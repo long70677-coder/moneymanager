@@ -1,0 +1,434 @@
+<!DOCTYPE html>
+
+<html lang="zh-TW"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>暫收交易 - FinOps Back-Office</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    colors: {
+                        "inverse-on-surface": "#f2f0f3",
+                        "on-secondary": "#ffffff",
+                        "on-background": "#1b1b1e",
+                        "primary-fixed": "#d8e2ff",
+                        "background": "#fbf8fc",
+                        "on-tertiary-fixed": "#291800",
+                        "outline-variant": "#c5c6cf",
+                        "on-primary": "#ffffff",
+                        "secondary": "#585e6d",
+                        "surface-container": "#efedf0",
+                        "on-secondary-fixed-variant": "#414755",
+                        "tertiary-fixed": "#ffddb1",
+                        "surface": "#fbf8fc",
+                        "on-primary-container": "#8293b8",
+                        "on-primary-fixed": "#081b3a",
+                        "surface-container-low": "#f5f3f6",
+                        "surface-container-high": "#e9e7eb",
+                        "inverse-surface": "#303033",
+                        "secondary-fixed": "#dde2f4",
+                        "on-primary-fixed-variant": "#364768",
+                        "surface-dim": "#dbd9dc",
+                        "on-tertiary-fixed-variant": "#5d4217",
+                        "secondary-fixed-dim": "#c1c6d8",
+                        "surface-bright": "#fbf8fc",
+                        "on-error": "#ffffff",
+                        "surface-variant": "#e4e2e5",
+                        "primary-container": "#1a2b4b",
+                        "inverse-primary": "#b6c6ef",
+                        "tertiary-fixed-dim": "#e8c08a",
+                        "on-secondary-fixed": "#161b28",
+                        "on-error-container": "#93000a",
+                        "outline": "#75777f",
+                        "on-surface": "#1b1b1e",
+                        "primary": "#031635",
+                        "on-surface-variant": "#44474e",
+                        "surface-container-highest": "#e4e2e5",
+                        "error": "#ba1a1a",
+                        "on-secondary-container": "#5d6272",
+                        "tertiary": "#231400",
+                        "surface-container-lowest": "#ffffff",
+                        "on-tertiary-container": "#b08d5b",
+                        "surface-tint": "#4e5e81",
+                        "tertiary-container": "#3e2700",
+                        "error-container": "#ffdad6",
+                        "primary-fixed-dim": "#b6c6ef",
+                        "on-tertiary": "#ffffff",
+                        "secondary-container": "#dadff1",
+                        
+                        // Custom action colors referenced in prompt
+                        "action-blue": "#2563EB",
+                        "action-blue-hover": "#1D4ED8",
+                        "success-bg": "#DCFCE7",
+                        "success-text": "#166534",
+                        "danger-bg": "#FEE2E2",
+                        "danger-text": "#991B1B",
+                        "table-header": "#F1F5F9",
+                        "table-border": "#E2E8F0"
+                    },
+                    borderRadius: {
+                        "DEFAULT": "0.125rem",
+                        "lg": "0.25rem",
+                        "xl": "0.5rem",
+                        "full": "0.75rem"
+                    },
+                    spacing: {
+                        "container-max": "1440px",
+                        "margin": "32px",
+                        "xl": "32px",
+                        "xs": "4px",
+                        "gutter": "24px",
+                        "md": "16px",
+                        "lg": "24px",
+                        "base": "4px",
+                        "sm": "8px"
+                    },
+                    fontFamily: {
+                        "body-lg": ["Inter", "sans-serif"],
+                        "headline-xl": ["Inter", "sans-serif"],
+                        "headline-md": ["Inter", "sans-serif"],
+                        "headline-lg": ["Inter", "sans-serif"],
+                        "label-md": ["Inter", "sans-serif"],
+                        "data-mono": ["Inter", "monospace"],
+                        "body-md": ["Inter", "sans-serif"],
+                        "body-sm": ["Inter", "sans-serif"]
+                    }
+                }
+            }
+        }
+    </script>
+<style>
+        .material-symbols-outlined {
+          font-variation-settings: 'FILL' 1, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+        
+        /* High-density table styles */
+        .table-cell {
+            padding: 8px 12px;
+            white-space: nowrap;
+        }
+        .th-cell {
+            padding: 10px 12px;
+            white-space: nowrap;
+        }
+        
+        /* Custom Scrollbar for dense tables */
+        ::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #f1f5f9; 
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #cbd5e1; 
+            border-radius: 4px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #94a3b8; 
+        }
+    </style>
+</head>
+<body class="bg-surface text-on-surface font-body-md text-body-md antialiased min-h-screen flex flex-col">
+<!-- SideNavBar (Predicted Component) -->
+<nav class="bg-primary dark:bg-primary text-secondary-fixed dark:text-secondary-fixed-dim font-body-md text-body-md h-screen w-64 fixed left-0 top-0 border-r border-outline-variant flex flex-col h-full z-20">
+<!-- Header -->
+<div class="p-gutter border-b border-on-primary-fixed-variant/20 flex items-center gap-3">
+<div class="w-10 h-10 rounded-full bg-primary-container flex items-center justify-center overflow-hidden shrink-0">
+<span class="material-symbols-outlined text-on-primary-container">account_balance</span>
+</div>
+<div>
+<h1 class="font-headline-md text-headline-md font-bold text-on-primary tracking-tight">FinOps Core</h1>
+<p class="text-xs text-secondary-fixed-dim">Back-Office v4.2</p>
+</div>
+</div>
+<!-- Main Tabs -->
+<div class="flex-1 py-4 flex flex-col gap-1 px-3 overflow-y-auto">
+<a class="flex items-center gap-3 px-3 py-2 rounded-lg text-on-primary-fixed-variant opacity-80 hover:bg-primary-container hover:text-on-primary-fixed transition-colors" href="#">
+<span class="material-symbols-outlined">dashboard</span>
+                Dashboard
+            </a>
+<a class="flex items-center gap-3 px-3 py-2 rounded-lg text-on-primary-fixed-variant opacity-80 hover:bg-primary-container hover:text-on-primary-fixed transition-colors" href="#">
+<span class="material-symbols-outlined">account_balance</span>
+                Accounting
+            </a>
+<a class="flex items-center gap-3 px-3 py-2 rounded-lg text-on-primary-fixed-variant opacity-80 hover:bg-primary-container hover:text-on-primary-fixed transition-colors" href="#">
+<span class="material-symbols-outlined">payments</span>
+                Cash Management
+            </a>
+<a class="flex items-center gap-3 px-3 py-2 rounded-lg border-l-4 border-secondary-fixed-dim bg-primary-container text-on-primary-fixed opacity-100 duration-150" href="#">
+<span class="material-symbols-outlined">history_edu</span>
+                Suspense Transactions
+            </a>
+<a class="flex items-center gap-3 px-3 py-2 rounded-lg text-on-primary-fixed-variant opacity-80 hover:bg-primary-container hover:text-on-primary-fixed transition-colors" href="#">
+<span class="material-symbols-outlined">settings</span>
+                Settings
+            </a>
+</div>
+<!-- Footer Tabs -->
+<div class="p-3 border-t border-on-primary-fixed-variant/20 flex flex-col gap-1">
+<a class="flex items-center gap-3 px-3 py-2 rounded-lg text-on-primary-fixed-variant opacity-80 hover:bg-primary-container hover:text-on-primary-fixed transition-colors" href="#">
+<span class="material-symbols-outlined">help</span>
+                Support
+            </a>
+<a class="flex items-center gap-3 px-3 py-2 rounded-lg text-on-primary-fixed-variant opacity-80 hover:bg-primary-container hover:text-on-primary-fixed transition-colors" href="#">
+<span class="material-symbols-outlined">logout</span>
+                Logout
+            </a>
+</div>
+</nav>
+<!-- TopAppBar (Predicted Component) -->
+<header class="bg-surface dark:bg-surface-dim text-primary dark:text-primary-fixed font-body-sm text-body-sm border-b border-outline-variant flex justify-between items-center h-16 px-gutter w-[calc(100%-16rem)] ml-64 fixed top-0 z-10 transition-all duration-200">
+<!-- Brand/Search -->
+<div class="flex items-center gap-6">
+<span class="font-headline-sm text-headline-sm font-bold text-primary dark:text-primary-fixed">FinOps Back-Office</span>
+<div class="relative w-64">
+<span class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant text-sm">search</span>
+<input class="w-full pl-9 pr-3 py-1.5 bg-surface-container-low border-none rounded-DEFAULT focus:ring-2 focus:ring-action-blue text-sm" placeholder="Search transactions..." type="text"/>
+</div>
+</div>
+<!-- Navigation Links (Horizontal) -->
+<nav class="hidden lg:flex items-center gap-6 h-full">
+<a class="h-full flex items-center text-on-surface-variant hover:text-primary transition-opacity" href="#">Accounting</a>
+<a class="h-full flex items-center text-on-surface-variant hover:text-primary transition-opacity" href="#">Cash Management</a>
+<a class="h-full flex items-center text-primary font-bold border-b-2 border-primary pb-1" href="#">Suspense Transactions</a>
+</nav>
+<!-- Trailing Actions -->
+<div class="flex items-center gap-4">
+<span class="px-2 py-1 bg-success-bg text-success-text rounded text-xs font-medium flex items-center gap-1">
+<span class="material-symbols-outlined text-[14px]">check_circle</span>
+                System Healthy
+            </span>
+<button class="text-on-surface-variant hover:text-primary transition-opacity relative">
+<span class="material-symbols-outlined">notifications</span>
+<span class="absolute top-0 right-0 w-2 h-2 bg-error rounded-full"></span>
+</button>
+<button class="w-8 h-8 rounded-full overflow-hidden border border-outline-variant hover:ring-2 hover:ring-primary transition-all">
+<img alt="Senior Analyst Profile" class="w-full h-full object-cover" data-alt="A professional headshot of a corporate financial analyst in a modern office setting. The lighting is bright and even, highlighting a clean, polished appearance suitable for an enterprise software avatar. The background is a slightly blurred, light-colored modern office space. The aesthetic is corporate, professional, and trustworthy." src="https://lh3.googleusercontent.com/aida-public/AB6AXuBgeEheMVRhLgtertYh06ip77yIczinqe_p0JFsyOK9BSe6y4J_Kp-vTG7gCxLMKRtm1ptBs-gh8p1FGYI8AnQ01q1GfriKY-sv-5JymrBqtcKzprecCKhuLeWCvgIMMTaxB71BGJAvJIxkiKxWm9koKrVwgXyZmxKNYZD1ZqCf4ryYnYJm5ZAHIudqx6rkvx9oPD55cdiABsrv5_f39Fw6H8aU8lnSSiMgA6qCCcDYtK32OPPqMx67TRJCtBKgwR4QYClanadHztgi"/>
+</button>
+</div>
+</header>
+<!-- Main Content Canvas -->
+<main class="mt-16 ml-64 p-gutter flex flex-col gap-6 flex-1 bg-surface">
+<!-- Top Area: Header & Message -->
+<div class="flex flex-col gap-sm">
+<h2 class="font-headline-lg text-headline-lg font-semibold text-on-background">暫收交易</h2>
+<!-- System Message Bar -->
+<div class="flex items-center gap-2 p-3 bg-success-bg border border-[#bbf7d0] rounded-DEFAULT text-success-text text-sm">
+<span class="material-symbols-outlined">task_alt</span>
+<span>批號 <strong>20231027001</strong> 查詢成功</span>
+<button class="ml-auto text-success-text hover:opacity-70"><span class="material-symbols-outlined text-sm">close</span></button>
+</div>
+</div>
+<!-- Middle Area: Query Panel -->
+<section class="bg-surface-container-lowest border border-table-border rounded-lg p-md shadow-sm">
+<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+<!-- Field 1 -->
+<div class="flex flex-col gap-1">
+<label class="font-label-md text-label-md text-on-surface-variant">Suspense Date</label>
+<div class="relative">
+<input class="w-full border-table-border rounded-DEFAULT focus:border-action-blue focus:ring-1 focus:ring-action-blue text-sm h-[36px] bg-surface-container-lowest" type="date" value="2023-10-27"/>
+</div>
+</div>
+<!-- Field 2 -->
+<div class="flex flex-col gap-1">
+<label class="font-label-md text-label-md text-on-surface-variant">Suspense Type</label>
+<select class="w-full border-table-border rounded-DEFAULT focus:border-action-blue focus:ring-1 focus:ring-action-blue text-sm h-[36px] bg-surface-container-lowest">
+<option>日常暫收 (Daily)</option>
+<option>手工暫收 (Manual)</option>
+<option>二次暫收 (Secondary)</option>
+</select>
+</div>
+<!-- Field 3 -->
+<div class="flex flex-col gap-1">
+<label class="font-label-md text-label-md text-on-surface-variant">Currency</label>
+<select class="w-full border-table-border rounded-DEFAULT focus:border-action-blue focus:ring-1 focus:ring-action-blue text-sm h-[36px] bg-surface-container-lowest">
+<option>NTD</option>
+<option>USD</option>
+<option>EUR</option>
+<option>JPY</option>
+</select>
+</div>
+<!-- Field 4 -->
+<div class="flex flex-col gap-1">
+<label class="font-label-md text-label-md text-on-surface-variant">Batch No</label>
+<input class="w-full border-table-border rounded-DEFAULT focus:border-action-blue focus:ring-1 focus:ring-action-blue text-sm h-[36px] bg-surface-container-lowest" placeholder="Enter Batch No..." type="text" value="20231027001"/>
+</div>
+</div>
+<!-- Action Buttons -->
+<div class="flex items-center justify-between pt-4 border-t border-table-border">
+<div class="flex items-center gap-3">
+<button class="h-[36px] px-6 bg-[url('data:image/svg+xml;utf8,&lt;svg&gt;&lt;/svg&gt;')] bg-action-blue hover:bg-action-blue-hover text-on-primary rounded-DEFAULT font-medium text-sm flex items-center gap-2 transition-colors shadow-sm" style="background-image: none;">
+<span class="material-symbols-outlined text-[18px]">search</span>
+                        查詢 (Query)
+                    </button>
+<button class="h-[36px] px-4 bg-surface-container-lowest border border-outline-variant hover:bg-surface-container-low text-on-surface rounded-DEFAULT font-medium text-sm flex items-center gap-2 transition-colors">
+<span class="material-symbols-outlined text-[18px]">add</span>
+                        新增 (Add)
+                    </button>
+<button class="h-[36px] px-4 bg-surface-container-lowest border border-outline-variant hover:bg-surface-container-low text-on-surface rounded-DEFAULT font-medium text-sm flex items-center gap-2 transition-colors">
+<span class="material-symbols-outlined text-[18px]">save</span>
+                        儲存 (Save)
+                    </button>
+</div>
+<button class="h-[36px] px-4 bg-surface-container-lowest border border-danger-text hover:bg-danger-bg text-danger-text rounded-DEFAULT font-medium text-sm flex items-center gap-2 transition-colors">
+<span class="material-symbols-outlined text-[18px]">delete</span>
+                    刪除 (Delete)
+                </button>
+</div>
+</section>
+<!-- Bottom Area: Result Grid -->
+<section class="bg-surface-container-lowest border border-table-border rounded-lg shadow-sm flex flex-col overflow-hidden">
+<!-- Batch Info Bar -->
+<div class="p-4 bg-surface-container-low border-b border-table-border flex items-center justify-between">
+<div class="flex items-center gap-4">
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined text-on-surface-variant">folder</span>
+<span class="font-medium text-on-surface">批號: 20231027001</span>
+</div>
+<span class="px-2 py-0.5 bg-surface-variant text-on-surface-variant text-xs rounded font-medium border border-outline-variant">Unconfirmed</span>
+</div>
+<div class="flex items-center gap-3">
+<label class="font-label-md text-label-md text-on-surface-variant cursor-pointer select-none">批號確認 (Batch Confirm)</label>
+<!-- Toggle Switch -->
+<button aria-checked="false" class="relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent bg-outline-variant transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-action-blue focus:ring-offset-2" role="switch" type="button">
+<span aria-hidden="true" class="pointer-events-none inline-block h-5 w-5 translate-x-0 transform rounded-full bg-surface-container-lowest shadow ring-0 transition duration-200 ease-in-out"></span>
+</button>
+</div>
+</div>
+<!-- Data Table Container -->
+<div class="overflow-x-auto w-full">
+<table class="w-full text-left border-collapse min-w-max">
+<thead class="bg-table-header border-b border-table-border font-label-md text-label-md text-on-surface-variant sticky top-0 z-10 shadow-[0_1px_0_#E2E8F0]">
+<tr>
+<th class="th-cell w-[40px] text-center"><input class="rounded-sm border-outline-variant text-action-blue focus:ring-action-blue" type="checkbox"/></th>
+<th class="th-cell">帳號短碼</th>
+<th class="th-cell">帳號用途</th>
+<th class="th-cell">批號</th>
+<th class="th-cell">幣別</th>
+<th class="th-cell">暫收類型</th>
+<th class="th-cell text-right">前日公司帳列餘額</th>
+<th class="th-cell text-right">前日存摺餘額</th>
+<th class="th-cell text-right">今日公司帳列餘額</th>
+<th class="th-cell text-right">今日存摺餘額</th>
+<th class="th-cell text-right">今日總立暫收金額</th>
+<th class="th-cell text-right text-primary font-semibold">立暫收金額</th>
+<th class="th-cell text-right">立暫收金額(記帳幣)</th>
+<th class="th-cell">維護人員</th>
+<th class="th-cell">維護時間</th>
+</tr>
+</thead>
+<tbody class="text-sm font-data-mono divide-y divide-table-border">
+<!-- Standard Row -->
+<tr class="hover:bg-surface-container-low transition-colors group">
+<td class="table-cell text-center"><input class="rounded-sm border-outline-variant text-action-blue focus:ring-action-blue" type="checkbox"/></td>
+<td class="table-cell text-on-surface">ACT-001</td>
+<td class="table-cell text-on-surface-variant">General Suspense</td>
+<td class="table-cell">20231027001</td>
+<td class="table-cell"><span class="px-2 py-0.5 bg-secondary-container text-on-secondary-container rounded text-xs">NTD</span></td>
+<td class="table-cell"><span class="px-2 py-0.5 bg-surface-variant text-on-surface-variant rounded text-xs border border-outline-variant">日常暫收</span></td>
+<td class="table-cell text-right text-on-surface-variant">1,250,000</td>
+<td class="table-cell text-right text-on-surface-variant">1,250,000</td>
+<td class="table-cell text-right">1,250,000</td>
+<td class="table-cell text-right">1,250,000</td>
+<td class="table-cell text-right">0</td>
+<td class="table-cell text-right p-1">
+<input class="w-full text-right border border-transparent hover:border-table-border focus:border-action-blue focus:ring-1 focus:ring-action-blue rounded bg-transparent focus:bg-surface-container-lowest px-2 py-1 transition-all" type="text" value="0"/>
+</td>
+<td class="table-cell text-right text-on-surface-variant">0</td>
+<td class="table-cell text-on-surface-variant text-xs">J.Smith</td>
+<td class="table-cell text-on-surface-variant text-xs">09:14:22</td>
+</tr>
+<!-- Anomaly Row (Highlight) -->
+<tr class="bg-danger-bg/40 hover:bg-danger-bg/60 transition-colors group">
+<td class="table-cell text-center"><input class="rounded-sm border-danger-text text-action-blue focus:ring-action-blue" type="checkbox"/></td>
+<td class="table-cell text-danger-text font-medium">ACT-089</td>
+<td class="table-cell text-on-surface-variant">Clearing Discrepancy</td>
+<td class="table-cell">20231027001</td>
+<td class="table-cell"><span class="px-2 py-0.5 bg-secondary-container text-on-secondary-container rounded text-xs">NTD</span></td>
+<td class="table-cell"><span class="px-2 py-0.5 bg-surface-variant text-on-surface-variant rounded text-xs border border-outline-variant">手工暫收</span></td>
+<td class="table-cell text-right text-on-surface-variant">500,000</td>
+<td class="table-cell text-right text-on-surface-variant">500,000</td>
+<td class="table-cell text-right text-danger-text font-medium">450,000</td>
+<td class="table-cell text-right text-danger-text font-medium">500,000</td>
+<td class="table-cell text-right">50,000</td>
+<td class="table-cell text-right p-1">
+<input class="w-full text-right border border-danger-text focus:border-action-blue focus:ring-1 focus:ring-action-blue rounded bg-surface-container-lowest px-2 py-1 shadow-sm font-medium" type="text" value="50,000"/>
+</td>
+<td class="table-cell text-right text-on-surface-variant">50,000</td>
+<td class="table-cell text-on-surface-variant text-xs">M.Chen</td>
+<td class="table-cell text-on-surface-variant text-xs">10:05:11</td>
+</tr>
+<!-- Standard Row -->
+<tr class="hover:bg-surface-container-low transition-colors group">
+<td class="table-cell text-center"><input class="rounded-sm border-outline-variant text-action-blue focus:ring-action-blue" type="checkbox"/></td>
+<td class="table-cell text-on-surface">ACT-102</td>
+<td class="table-cell text-on-surface-variant">Foreign Remittance</td>
+<td class="table-cell">20231027001</td>
+<td class="table-cell"><span class="px-2 py-0.5 bg-[#e0f2fe] text-[#0369a1] rounded text-xs border border-[#bae6fd]">USD</span></td>
+<td class="table-cell"><span class="px-2 py-0.5 bg-surface-variant text-on-surface-variant rounded text-xs border border-outline-variant">日常暫收</span></td>
+<td class="table-cell text-right text-on-surface-variant">25,000.00</td>
+<td class="table-cell text-right text-on-surface-variant">25,000.00</td>
+<td class="table-cell text-right">25,000.00</td>
+<td class="table-cell text-right">25,000.00</td>
+<td class="table-cell text-right">0</td>
+<td class="table-cell text-right p-1">
+<input class="w-full text-right border border-transparent hover:border-table-border focus:border-action-blue focus:ring-1 focus:ring-action-blue rounded bg-transparent focus:bg-surface-container-lowest px-2 py-1 transition-all" type="text" value="0.00"/>
+</td>
+<td class="table-cell text-right text-on-surface-variant">0</td>
+<td class="table-cell text-on-surface-variant text-xs">System</td>
+<td class="table-cell text-on-surface-variant text-xs">08:00:01</td>
+</tr>
+</tbody>
+</table>
+</div>
+<!-- Table Footer / Pagination Placeholder -->
+<div class="p-3 border-t border-table-border bg-surface-container-lowest flex justify-between items-center text-xs text-on-surface-variant">
+<span>Showing 1 to 3 of 3 entries</span>
+<div class="flex gap-1">
+<button class="px-2 py-1 border border-outline-variant rounded hover:bg-surface-container-low disabled:opacity-50" disabled="">Prev</button>
+<button class="px-2 py-1 border border-action-blue bg-action-blue text-on-primary rounded">1</button>
+<button class="px-2 py-1 border border-outline-variant rounded hover:bg-surface-container-low disabled:opacity-50" disabled="">Next</button>
+</div>
+</div>
+</section>
+</main>
+<script>
+        // Simple toggle interaction logic for demonstration
+        document.addEventListener('DOMContentLoaded', () => {
+            const toggleBtn = document.querySelector('[role="switch"]');
+            const toggleKnob = toggleBtn.querySelector('span');
+            const statusLabel = document.querySelector('.bg-surface-variant.text-on-surface-variant');
+
+            toggleBtn.addEventListener('click', () => {
+                const isChecked = toggleBtn.getAttribute('aria-checked') === 'true';
+                
+                if (!isChecked) {
+                    toggleBtn.setAttribute('aria-checked', 'true');
+                    toggleBtn.classList.remove('bg-outline-variant');
+                    toggleBtn.classList.add('bg-action-blue');
+                    toggleKnob.classList.add('translate-x-5');
+                    
+                    statusLabel.textContent = 'Confirmed';
+                    statusLabel.classList.remove('bg-surface-variant', 'text-on-surface-variant');
+                    statusLabel.classList.add('bg-success-bg', 'text-success-text', 'border-success-text');
+                } else {
+                    toggleBtn.setAttribute('aria-checked', 'false');
+                    toggleBtn.classList.remove('bg-action-blue');
+                    toggleBtn.classList.add('bg-outline-variant');
+                    toggleKnob.classList.remove('translate-x-5');
+                    
+                    statusLabel.textContent = 'Unconfirmed';
+                    statusLabel.classList.remove('bg-success-bg', 'text-success-text', 'border-success-text');
+                    statusLabel.classList.add('bg-surface-variant', 'text-on-surface-variant');
+                }
+            });
+        });
+    </script>
+</body></html>
