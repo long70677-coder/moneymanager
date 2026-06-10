@@ -18,6 +18,11 @@
 | 7 | `sequence_counters` | 自動跳號表 | 共用基礎 | ✅ 已實作 |
 | 8 | `users` | 使用者 | 權限控制 | ✅ 已實作 |
 | 9 | `account_managers` | 帳號維護人員（主辦/代理） | 權限控制 | ✅ 已實作 |
+| 10 | `bank_format_profiles` | 銀行格式設定檔 | FUN2.1.1 | 📐 已設計，未實作 |
+| 11 | `import_logs` | 轉檔歷程檔 | FUN2.1.1 | 📐 已設計，未實作 |
+| 12 | `ledger_balances` | 帳列餘額檔 | FUN2.1.1／結帳 | 📐 已設計，未實作 |
+
+> 第 10–12 表為 FUN2.1.1 轉檔的設計產物，完整設計見 `FUN2.1.1_轉檔架構設計.md`。`ledger_balances` 由後續「結帳/日結流程」供應，FUN2.1.1 僅唯讀消費。
 
 > **業務規則：單一批號僅限單一幣別** — 批號自動跳號以「類型＋日期＋幣別」為 key，後端於新增時拒絕同批號混用不同幣別，查詢亦要求指定單一幣別。
 >
@@ -66,7 +71,10 @@ bank_accounts ──< account_managers >── users   (account_code FK / user_i
 | is_suspense | INTEGER | DEFAULT 1 | 是否暫收帳戶（1=是） |
 | is_policy_account | INTEGER | DEFAULT 0 | 是否保單帳戶（影響匯率固定為 1） |
 | currency_type | TEXT | DEFAULT 'TWD' | 幣別類型：TWD / FOREIGN |
+| `import_file_name` | TEXT | （FUN2.1.1 新增） | 該帳號餘額檔的檔名（一檔一帳號；轉檔時以檔名對到帳號） |
 | created_at / updated_at | TEXT | DEFAULT datetime('now') | 建立 / 異動時間 |
+
+> FUN2.1.1 轉檔時，profile **不另存欄位**，由系統依「`bank_code` ＋ 帳號幣別」即時帶出（精確幣別→`ZZZ` fallback），唯讀不可手改。
 
 ### 2. `passbook_balances`（存摺餘額資料檔 ← FUN2.1.1）
 
@@ -78,15 +86,17 @@ bank_accounts ──< account_managers >── users   (account_code FK / user_i
 | currency | TEXT | NOT NULL | 幣別 |
 | balance | REAL | DEFAULT 0 | 餘額 |
 | data_type | TEXT | DEFAULT 'PREV_DAY' | 資料類型：PREV_DAY（前日）/ FILE_IMPORT（檔案轉入）/ MANUAL（手動） |
+| `import_seq` | INTEGER | DEFAULT 1（FUN2.1.1 新增） | **轉入次別**：同日二次轉入用；一般=1，二次轉入=前次最大+1 |
 | file_name | TEXT | | 來源檔名 |
 | memo | TEXT | | 備註 |
-| is_reviewed | INTEGER | DEFAULT 0 | 是否覆核 |
+| is_reviewed | INTEGER | DEFAULT 0 | 是否覆核（**全批覆核**：以餘額日期＋幣別為單位） |
 | reviewed_by / reviewed_at | TEXT | | 覆核人員 / 時間 |
 | created_by / created_at | TEXT | | 建立軌跡 |
 | updated_by / updated_at | TEXT | | 異動軌跡 |
-| — | — | **UNIQUE(balance_date, account_code, currency)** | 邏輯唯一鍵 = 餘額日期＋帳號短碼＋幣別 |
+| — | — | **UNIQUE(balance_date, account_code, currency, import_seq)** | 邏輯唯一鍵（含轉入次別） |
 
-> ⚠️ **落差**：此表已建立並有 seed 資料，但檔案上傳 / 解析 / 轉檔功能（FUN2.1.1）尚未實作，目前無寫入路徑。
+> ⚠️ **落差**：此表已建立並有 seed，但轉檔功能（FUN2.1.1）尚未實作。`import_seq` 與唯一鍵調整為設計決議，實作時一併套用。
+> 📐 **轉檔規則**：重傳更正覆蓋最新次別（已立暫收須先取消）；勾「二次轉入」則 `import_seq+1` 保留前筆；下游立暫收取最新次別。詳見 `FUN2.1.1_轉檔架構設計.md` §7。
 
 ### 3. `suspense_transactions`（暫收交易檔 ← FUN2.1.2 核心）
 
@@ -204,13 +214,25 @@ bank_accounts ──< account_managers >── users   (account_code FK / user_i
 
 > 權限判斷對應 SA「同時考量主維護人 + 代理維護人 + 代理有效期間」。`getAccessibleAccountCodes(db, userId, refDate)` 依參考日期（暫收日期）回傳可存取帳號；主管回傳 null（全部）。
 
+### 10. `bank_format_profiles`（銀行格式設定檔 ← FUN2.1.1，📐 設計）
+
+銀行餘額檔的解析設定，**鍵 = 銀行＋幣別（＋版本）**，幣別可用 `ZZZ` 表該行共用/外幣格式。主要欄位：engine（DELIMITED/FIXED_WIDTH/EXCEL）、encoding、delimiter、skip_rows、column_map(JSON)、date_format、amount_format、currency_map、version、effective_date、status、覆核軌跡。唯一鍵 **UNIQUE(bank_code, currency, version)**。完整 DDL 見 `FUN2.1.1_轉檔架構設計.md` §8.1。
+
+### 11. `import_logs`（轉檔歷程檔 ← FUN2.1.1，📐 設計）
+
+每次轉檔的批次軌跡：batch_id、file_name、account_code、profile_id、balance_date、total/success/fail_count、status（SUCCESS/PARTIAL/FAILED）、errors(JSON)、上傳人員/時間。對應 SA 第四節「轉檔歷程/介面 log」。完整定義見 `FUN2.1.1_轉檔架構設計.md` §8.3。
+
+### 12. `ledger_balances`（帳列餘額檔 ← FUN2.1.1／結帳，📐 設計）
+
+公司內部帳列餘額（本日結餘），由**結帳/日結流程**寫入；FUN2.1.1（畫面「系統前日帳列餘額」）與 FUN2.1.2（`prev_company_balance` 來源）皆**唯讀消費**。主要欄位：balance_date、account_code(FK)、currency、balance（結餘）、is_closed、closed_at、軌跡。唯一鍵 **UNIQUE(balance_date, account_code, currency)**。完整 DDL 見 `FUN2.1.1_轉檔架構設計.md` §8.4。
+
 ---
 
 ## 四、與 SA 規格的落差清單（待 SA / 業務決策）
 
 | # | 落差項目 | 現況 | 建議 |
 |---|----------|------|------|
-| 1 | **轉檔歷程 log 表未建** | SA 第四節建議的上傳批次/檔名/成功失敗筆數/錯誤訊息 log 表未實作（FUN2.1.1 整體缺口） | 補 `import_logs` 表並實作轉檔功能 |
+| 1 | **轉檔歷程 log 表未建** | SA 第四節建議的上傳批次/檔名/成功失敗筆數/錯誤訊息 log 表未實作（FUN2.1.1 整體缺口） | 📐 已設計 `import_logs`（見 FUN2.1.1 設計 §8.3），待實作 |
 | 2 | **匯率來源寫死** | 外幣匯率為 demo 預設 `31.5`，無匯率檔 | 建 `exchange_rates` 表，依暫收日期取最近一筆 |
 | 3 | **實體 FK 僅 2 條** | voucher/report/batch_confirmation 靠 batch_no 邏輯關聯 | 評估是否補實體 FK 或維持邏輯關聯 |
 | 4 | **batch_type 定義** | 直接存暫收類型，對應 SA 待確認議題第 8 點 | 明確定義批號類型編碼規則，避免 key 衝突 |
@@ -220,4 +242,5 @@ bank_accounts ──< account_managers >── users   (account_code FK / user_i
 
 ---
 
-*文件版本：v1.0｜對應程式：`suspense-app/src/lib/db.ts`*
+*文件版本：v1.1｜對應程式：`suspense-app/src/lib/db.ts`｜FUN2.1.1 轉檔設計：`FUN2.1.1_轉檔架構設計.md`*
+*v1.1 異動：passbook_balances 加 import_seq 並改唯一鍵；bank_accounts 加 import_file_name；新增 bank_format_profiles / import_logs / ledger_balances（皆設計階段，未實作）。*
