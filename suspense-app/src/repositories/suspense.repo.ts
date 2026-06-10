@@ -180,6 +180,22 @@ export const suspenseRepo = {
     return row?.suspense_date;
   },
 
+  /**
+   * 取指定暫收日期下已存在的批號清單（去重、排序）。
+   * accountCodes：null = 不過濾（主管）；string[] = 僅這些帳號（呼叫端須先處理空陣列）。
+   */
+  findBatchNumbersByDate(db: DB, suspenseDate: string, accountCodes: string[] | null): string[] {
+    let sql = "SELECT DISTINCT batch_no FROM suspense_transactions WHERE suspense_date = ?";
+    const params: unknown[] = [suspenseDate];
+    if (accountCodes != null) {
+      sql += ` AND account_code IN (${accountCodes.map(() => "?").join(",")})`;
+      params.push(...accountCodes);
+    }
+    sql += " ORDER BY batch_no";
+    const rows = db.prepare(sql).all(...params) as Array<{ batch_no: string }>;
+    return rows.map(r => r.batch_no);
+  },
+
   /** 該批號中立暫收金額非零的交易（供產傳票/通報）。 */
   findNonZeroByBatch(db: DB, batchNo: string): Row[] {
     return db.prepare("SELECT * FROM suspense_transactions WHERE batch_no = ? AND suspense_amount != 0")

@@ -40,7 +40,10 @@ export default function SuspensePage() {
   const [suspenseDate, setSuspenseDate] = useState("2023-10-27");
   const [suspenseType, setSuspenseType] = useState("ALL");
   const [currency, setCurrency] = useState("NTD");
-  const [batchNo, setBatchNo] = useState("20231027001");
+  const [batchNo, setBatchNo] = useState("");
+
+  // 批號下拉選項（依目前暫收日期帶出）
+  const [batchNoOptions, setBatchNoOptions] = useState<string[]>([]);
 
   // 已載入的批號卡片清單
   const [batches, setBatches] = useState<BatchCard[]>([]);
@@ -72,6 +75,20 @@ export default function SuspensePage() {
     setBatches([]);
     setEditedAmounts({});
   }, [currentUser?.id]);
+
+  // 依目前暫收日期（與操作者權限）載入批號下拉選項
+  useEffect(() => {
+    if (!suspenseDate) {
+      setBatchNoOptions([]);
+      return;
+    }
+    const params = new URLSearchParams({ suspenseDate });
+    if (currentUser) params.set("userId", String(currentUser.id));
+    fetch(`/api/suspense-transactions/batch-numbers?${params}`)
+      .then(r => r.json())
+      .then(data => setBatchNoOptions(data.batchNumbers ?? []))
+      .catch(() => setBatchNoOptions([]));
+  }, [suspenseDate, currentUser?.id]);
 
   // 新增或更新一張卡片（以批號為 key；已存在則就地更新，保留展開狀態）
   const upsertCard = useCallback((card: Omit<BatchCard, "expanded"> & { expanded?: boolean }) => {
@@ -373,11 +390,17 @@ export default function SuspensePage() {
             <label className="text-xs font-medium text-[#44474e]">批號</label>
             <input
               type="text"
+              list="batchNoOptions"
               value={batchNo}
               onChange={e => setBatchNo(e.target.value)}
-              placeholder="留空＝查詢符合條件全部批號／新增時自動取號"
+              placeholder="留空＝查詢全部批號／可選或輸入"
               className="w-full border border-[#d8dbe3] rounded-lg focus:border-[#2563EB] focus:ring-2 focus:ring-[#2563EB]/20 text-sm h-10 px-3 bg-white outline-none transition"
             />
+            <datalist id="batchNoOptions">
+              {batchNoOptions.map(b => (
+                <option key={b} value={b} />
+              ))}
+            </datalist>
           </div>
         </div>
 
