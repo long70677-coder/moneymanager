@@ -54,4 +54,63 @@ export const bankFormatRepo = {
   findAll(db: DB): Raw[] {
     return db.prepare("SELECT * FROM bank_format_profiles ORDER BY bank_code, currency, version DESC").all() as Raw[];
   },
+
+  /** 列出所有 profile（column_map 等 JSON 已解析），供維護畫面。 */
+  list(db: DB): BankFormatProfile[] {
+    return this.findAll(db).map(hydrate);
+  },
+
+  create(db: DB, p: ProfileInput): number {
+    const info = db.prepare(`
+      INSERT INTO bank_format_profiles
+        (bank_code, currency, profile_name, engine, encoding, delimiter, has_header, skip_rows,
+         column_map, date_format, currency_map, version, effective_date, status, updated_by)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      p.bank_code, p.currency, p.profile_name ?? null, p.engine, p.encoding, p.delimiter,
+      p.has_header ? 1 : 0, p.skip_rows ?? 0,
+      JSON.stringify(p.column_map), p.date_format ?? null,
+      p.currency_map ? JSON.stringify(p.currency_map) : null,
+      p.version ?? 1, p.effective_date ?? null, p.status ?? "ACTIVE", p.updatedBy ?? "User",
+    );
+    return Number(info.lastInsertRowid);
+  },
+
+  update(db: DB, id: number, p: ProfileInput): number {
+    return db.prepare(`
+      UPDATE bank_format_profiles SET
+        bank_code = ?, currency = ?, profile_name = ?, engine = ?, encoding = ?, delimiter = ?,
+        has_header = ?, skip_rows = ?, column_map = ?, date_format = ?, currency_map = ?,
+        version = ?, effective_date = ?, status = ?, updated_by = ?, updated_at = datetime('now')
+      WHERE id = ?
+    `).run(
+      p.bank_code, p.currency, p.profile_name ?? null, p.engine, p.encoding, p.delimiter,
+      p.has_header ? 1 : 0, p.skip_rows ?? 0, JSON.stringify(p.column_map), p.date_format ?? null,
+      p.currency_map ? JSON.stringify(p.currency_map) : null,
+      p.version ?? 1, p.effective_date ?? null, p.status ?? "ACTIVE", p.updatedBy ?? "User", id,
+    ).changes;
+  },
+
+  remove(db: DB, id: number): number {
+    return db.prepare("DELETE FROM bank_format_profiles WHERE id = ?").run(id).changes;
+  },
 };
+
+import type { ColumnMap } from "@/domain/ingest.types";
+export interface ProfileInput {
+  bank_code: string;
+  currency: string;
+  profile_name?: string | null;
+  engine: BankFormatProfile["engine"];
+  encoding: string;
+  delimiter: string;
+  has_header: boolean;
+  skip_rows?: number;
+  column_map: ColumnMap;
+  date_format?: string | null;
+  currency_map?: Record<string, string> | null;
+  version?: number;
+  effective_date?: string | null;
+  status?: string;
+  updatedBy?: string;
+}

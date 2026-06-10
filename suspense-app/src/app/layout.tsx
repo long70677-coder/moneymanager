@@ -21,6 +21,7 @@ const navItems = [
   { icon: "savings", label: "存摺餘額轉檔", href: "/balances", active: false },
   { icon: "history_edu", label: "暫收交易", href: "/suspense", active: true },
   { icon: "database", label: "基本資料維護", href: "/master", active: false },
+  { icon: "tune", label: "銀行格式設定", href: "/bank-formats", active: false },
   { icon: "settings", label: "系統設定", href: "#", active: false },
 ];
 
