@@ -214,18 +214,20 @@ export function toHttpError(e: unknown) {
 
 | 區塊 | 現況 | 目標 | 狀態 |
 |------|------|------|------|
-| route | SQL + 規則 + 權限混在 route 內 | route 只當 HTTP 邊界 | ⬜ 待重構 |
-| service 層 | 不存在 | 業務規則集中 | ⬜ 未建立 |
-| repository 層 | 不存在（SQL 散在 route） | SQL 集中 | ⬜ 未建立 |
-| domain | `lib/types.ts` | `domain/{types,rules,errors}` | ⬜ 部分 |
+| repository 層 | `repositories/*.repo.ts`，SQL 已集中 | 維持 | ✅ 已完成（step 1） |
+| route | SQL 已抽離；業務規則／權限仍在 route 內 | route 只當 HTTP 邊界 | 🟡 進行中 |
+| service 層 | 不存在 | 業務規則集中 | ⬜ 未建立（step 2） |
+| domain | `lib/types.ts` | `domain/{types,rules,errors}` | ⬜ 部分（step 3） |
 | 連線層 | `lib/db.ts` 單例 | 維持 | ✅ 符合 |
-| 權限函式 | `getAccessibleAccountCodes` in db.ts | 移到 `permission.service` | ⬜ 待移 |
+| 權限函式 | `getAccessibleAccountCodes` in db.ts | 移到 `permission.service` | ⬜ 待移（step 2） |
 
 **重構優先序（低風險先做）**：
-1. 抽 `repositories/`（搬 SQL，route 行為不變）。
-2. 抽 `services/`（收斂重複規則，三支暫收 route 改呼叫）。
+1. ✅ **已完成** — 抽 `repositories/`（搬 SQL，route 行為不變）。可參照現有 `repositories/*.repo.ts` 作為新 repository 的範本。
+2. 抽 `services/`（收斂重複規則如日結/通報鎖定/權限，三支暫收 route 改呼叫）。
 3. 建 `domain/errors.ts` + 統一錯誤處理。
 4. 第二個基本資料表出現時，再抽 `BaseRepository<T>`。
+
+> **目前 `repositories/` 已是符合本文件的活範例**；新增資料存取一律照其寫法（一表一 repo、方法具名、傳入 `db`、不含業務判斷）。route 內仍有的規則/權限邏輯是 step 2 待收斂的債務。
 
 > ⚠️ 重構採**逐步、行為不變**原則：每步完成後系統功能與現在一致，再進下一步。不要一次大改。
 

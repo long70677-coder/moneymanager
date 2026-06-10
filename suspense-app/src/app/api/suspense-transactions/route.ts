@@ -1,5 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getDb, seedData, getAccessibleAccountCodes } from "@/lib/db";
+import { suspenseRepo } from "@/repositories/suspense.repo";
+import { batchRepo } from "@/repositories/batch.repo";
+import { accountRepo } from "@/repositories/account.repo";
+import { sequenceRepo } from "@/repositories/sequence.repo";
+import { balanceRepo } from "@/repositories/balance.repo";
 
 function initDb() {
   const db = getDb();
@@ -24,41 +29,17 @@ export async function GET(request: NextRequest) {
 
   // 權限：經辦僅能看自己負責的帳號，主管看全部
   const accessible = getAccessibleAccountCodes(db, userId, suspenseDate || undefined);
-
-  let sql = `
-    SELECT st.*, ba.account_purpose, ba.account_name
-    FROM suspense_transactions st
-    JOIN bank_accounts ba ON st.account_code = ba.account_code
-    WHERE 1=1
-  `;
-  const params: unknown[] = [];
-
-  if (suspenseDate) {
-    sql += " AND st.suspense_date = ?";
-    params.push(suspenseDate);
-  }
-  if (suspenseType && suspenseType !== "ALL") {
-    sql += " AND st.suspense_type = ?";
-    params.push(suspenseType);
-  }
-  sql += " AND st.currency = ?";
-  params.push(currency);
-  if (batchNo) {
-    sql += " AND st.batch_no = ?";
-    params.push(batchNo);
+  if (accessible !== null && accessible.length === 0) {
+    return NextResponse.json({ batches: [], transactions: [], batchConfirmation: null, total: 0 });
   }
 
-  if (accessible !== null) {
-    if (accessible.length === 0) {
-      return NextResponse.json({ batches: [], transactions: [], batchConfirmation: null, total: 0 });
-    }
-    sql += ` AND st.account_code IN (${accessible.map(() => "?").join(",")})`;
-    params.push(...accessible);
-  }
-
-  sql += " ORDER BY st.batch_no, st.account_code";
-
-  const rows = db.prepare(sql).all(...params) as Array<Record<string, unknown>>;
+  const rows = suspenseRepo.findTransactions(db, {
+    suspenseDate,
+    suspenseType,
+    currency,
+    batchNo,
+    accountCodes: accessible,
+  });
 
   // 依批號分組為卡片
   const grouped = new Map<string, Array<Record<string, unknown>>>();
@@ -68,14 +49,13 @@ export async function GET(request: NextRequest) {
     grouped.get(key)!.push(r);
   }
 
-  const confirmStmt = db.prepare("SELECT * FROM batch_confirmations WHERE batch_no = ? LIMIT 1");
   const batches = Array.from(grouped.entries()).map(([bNo, txs]) => ({
     batchNo: bNo,
     suspenseDate: txs[0].suspense_date,
     suspenseType: txs[0].suspense_type,
     currency: txs[0].currency,
     transactions: txs,
-    batchConfirmation: confirmStmt.get(bNo) || null,
+    batchConfirmation: batchRepo.findByBatchNo(db, bNo),
   }));
 
   // 向後相容：指定單一批號查詢時，仍回傳 transactions / batchConfirmation
@@ -100,23 +80,13 @@ export async function POST(request: NextRequest) {
   }
 
   // 檢查日結
-  const dayClosed = db.prepare(`
-    SELECT COUNT(*) as cnt FROM suspense_transactions
-    WHERE suspense_date = ? AND currency = ? AND is_day_closed = 1
-  `).get(suspenseDate, currency) as { cnt: number };
-
-  if (dayClosed.cnt > 0) {
+  if (suspenseRepo.countDayClosed(db, suspenseDate, currency) > 0) {
     return NextResponse.json({ error: "作帳日該幣別已日結，不可新增" }, { status: 400 });
   }
 
   // 若為日常暫收，檢查通報鎖定
   if (suspenseType === "DAILY") {
-    const reportLocked = db.prepare(`
-      SELECT COUNT(*) as cnt FROM suspense_transactions
-      WHERE suspense_date = ? AND currency = ? AND is_report_locked = 1
-    `).get(suspenseDate, currency) as { cnt: number };
-
-    if (reportLocked.cnt > 0) {
+    if (suspenseRepo.countReportLocked(db, suspenseDate, currency) > 0) {
       return NextResponse.json({ error: "已通報鎖定，不可新增日常暫收" }, { status: 400 });
     }
   }
@@ -125,40 +95,24 @@ export async function POST(request: NextRequest) {
   let finalBatchNo = batchNo;
   if (!finalBatchNo) {
     const counterKey = `BATCH_${suspenseType}_${suspenseDate.replace(/-/g, "")}_${currency}`;
-    const counter = db.prepare("SELECT current_value FROM sequence_counters WHERE counter_key = ?").get(counterKey) as { current_value: number } | undefined;
-    const nextVal = (counter?.current_value || 0) + 1;
+    const nextVal = (sequenceRepo.getValue(db, counterKey) || 0) + 1;
     finalBatchNo = `${suspenseDate.replace(/-/g, "")}${String(nextVal).padStart(3, "0")}`;
-
-    db.prepare(`
-      INSERT INTO sequence_counters (counter_key, current_value) VALUES (?, ?)
-      ON CONFLICT(counter_key) DO UPDATE SET current_value = ?
-    `).run(counterKey, nextVal, nextVal);
+    sequenceRepo.setValue(db, counterKey, nextVal);
   }
 
   // 檢查批號是否已存在資料
-  const existing = db.prepare(`
-    SELECT COUNT(*) as cnt FROM suspense_transactions
-    WHERE batch_no = ? AND suspense_date = ? AND suspense_type = ? AND currency = ?
-  `).get(finalBatchNo, suspenseDate, suspenseType, currency) as { cnt: number };
-
-  if (existing.cnt > 0) {
+  if (suspenseRepo.countExisting(db, finalBatchNo, suspenseDate, suspenseType, currency) > 0) {
     return NextResponse.json({ error: "指定批號已存在資料，不可新增" }, { status: 400 });
   }
 
   // 單一批號僅限單一幣別：若同批號已被其他幣別使用，拒絕
-  const otherCurrency = db.prepare(`
-    SELECT DISTINCT currency FROM suspense_transactions WHERE batch_no = ? AND currency != ?
-  `).get(finalBatchNo, currency) as { currency: string } | undefined;
-
+  const otherCurrency = suspenseRepo.findOtherCurrency(db, finalBatchNo, currency);
   if (otherCurrency) {
-    return NextResponse.json({ error: `批號 ${finalBatchNo} 已用於幣別 ${otherCurrency.currency}，同一批號不可混用不同幣別` }, { status: 400 });
+    return NextResponse.json({ error: `批號 ${finalBatchNo} 已用於幣別 ${otherCurrency}，同一批號不可混用不同幣別` }, { status: 400 });
   }
 
   // 取得所有暫收帳戶
-  let accounts = db.prepare(`
-    SELECT * FROM bank_accounts WHERE is_suspense = 1
-    AND (currency_type = ? OR (? = 'NTD' AND currency_type = 'TWD'))
-  `).all(currency === "NTD" ? "TWD" : "FOREIGN", currency) as Array<Record<string, unknown>>;
+  let accounts = accountRepo.findSuspenseByCurrency(db, currency);
 
   // 權限：經辦僅能對自己負責的帳號立暫收，主管不限
   const accessible = getAccessibleAccountCodes(db, userId || 0, suspenseDate);
@@ -171,15 +125,6 @@ export async function POST(request: NextRequest) {
   }
 
   const prevDate = getPrevBusinessDay(suspenseDate);
-
-  const insertTx = db.prepare(`
-    INSERT INTO suspense_transactions
-    (transaction_no, suspense_date, suspense_type, batch_no, bank_code, account_code, currency,
-     prev_company_balance, prev_passbook_balance, today_company_balance, today_passbook_balance,
-     total_suspense_amount, suspense_amount, exchange_rate, suspense_amount_local, created_by, updated_by)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `);
-
   const results: Array<Record<string, unknown>> = [];
 
   const insertAll = db.transaction(() => {
@@ -191,21 +136,11 @@ export async function POST(request: NextRequest) {
       let suspenseAmount = 0, exchangeRate = 1;
 
       if (suspenseType === "DAILY") {
-        const prevBalance = db.prepare(`
-          SELECT balance FROM passbook_balances
-          WHERE balance_date = ? AND account_code = ? AND currency = ? AND is_reviewed = 1
-        `).get(prevDate, account.account_code, currency) as { balance: number } | undefined;
-
-        prevPassBal = prevBalance?.balance || 0;
+        prevPassBal = balanceRepo.findReviewedBalance(db, prevDate, account.account_code as string, currency) || 0;
         prevCompBal = prevPassBal;
         suspenseAmount = prevPassBal - prevCompBal;
       } else if (suspenseType === "SECONDARY") {
-        const todayBalance = db.prepare(`
-          SELECT balance FROM passbook_balances
-          WHERE balance_date = ? AND account_code = ? AND currency = ? AND is_reviewed = 1
-        `).get(suspenseDate, account.account_code, currency) as { balance: number } | undefined;
-
-        todayPassBal = todayBalance?.balance || 0;
+        todayPassBal = balanceRepo.findReviewedBalance(db, suspenseDate, account.account_code as string, currency) || 0;
         todayCompBal = todayPassBal;
         suspenseAmount = todayPassBal - todayCompBal;
       }
@@ -218,21 +153,32 @@ export async function POST(request: NextRequest) {
       const suspenseAmountLocal = suspenseAmount * exchangeRate;
       const totalSuspense = suspenseAmount;
 
-      insertTx.run(txNo, suspenseDate, suspenseType, finalBatchNo,
-        account.bank_code, account.account_code, currency,
-        prevCompBal, prevPassBal, todayCompBal, todayPassBal,
-        totalSuspense, suspenseAmount, exchangeRate, suspenseAmountLocal,
-        "System", "System");
+      suspenseRepo.insert(db, {
+        transaction_no: txNo,
+        suspense_date: suspenseDate,
+        suspense_type: suspenseType,
+        batch_no: finalBatchNo,
+        bank_code: account.bank_code as string,
+        account_code: account.account_code as string,
+        currency,
+        prev_company_balance: prevCompBal,
+        prev_passbook_balance: prevPassBal,
+        today_company_balance: todayCompBal,
+        today_passbook_balance: todayPassBal,
+        total_suspense_amount: totalSuspense,
+        suspense_amount: suspenseAmount,
+        exchange_rate: exchangeRate,
+        suspense_amount_local: suspenseAmountLocal,
+        created_by: "System",
+        updated_by: "System",
+      });
 
       results.push({ transactionNo: txNo, accountCode: account.account_code });
       seq++;
     }
 
     // 建立批號確認狀態
-    db.prepare(`
-      INSERT OR IGNORE INTO batch_confirmations (suspense_date, currency, batch_type, batch_no, confirm_status)
-      VALUES (?, ?, ?, ?, 'UNCONFIRMED')
-    `).run(suspenseDate, currency, suspenseType, finalBatchNo);
+    batchRepo.insertIgnore(db, { suspenseDate, currency, batchType: suspenseType, batchNo: finalBatchNo });
   });
 
   insertAll();
@@ -254,28 +200,19 @@ export async function PUT(request: NextRequest) {
     return NextResponse.json({ error: "無資料可儲存" }, { status: 400 });
   }
 
-  const updateTx = db.prepare(`
-    UPDATE suspense_transactions
-    SET suspense_amount = ?,
-        suspense_amount_local = ? * exchange_rate,
-        total_suspense_amount = ?,
-        updated_by = ?,
-        updated_at = datetime('now'),
-        version = version + 1
-    WHERE id = ? AND version = ? AND is_confirmed = 0 AND is_day_closed = 0
-  `);
-
   let successCount = 0;
   let failCount = 0;
 
   const saveAll = db.transaction(() => {
     for (const tx of transactions) {
-      const result = updateTx.run(tx.suspense_amount, tx.suspense_amount, tx.suspense_amount, "User", tx.id, tx.version);
-      if (result.changes > 0) {
-        successCount++;
-      } else {
-        failCount++;
-      }
+      const changes = suspenseRepo.updateAmount(db, {
+        id: tx.id,
+        suspense_amount: tx.suspense_amount,
+        version: tx.version,
+        updated_by: "User",
+      });
+      if (changes > 0) successCount++;
+      else failCount++;
     }
   });
 
@@ -303,39 +240,24 @@ export async function DELETE(request: NextRequest) {
   if (ownErr) return NextResponse.json({ error: ownErr }, { status: 403 });
 
   // 檢查是否已確認
-  const confirmed = db.prepare(`
-    SELECT COUNT(*) as cnt FROM suspense_transactions
-    WHERE batch_no = ? AND is_confirmed = 1
-  `).get(batchNo) as { cnt: number };
-
-  if (confirmed.cnt > 0) {
+  if (suspenseRepo.countConfirmedByBatch(db, batchNo) > 0) {
     return NextResponse.json({ error: "批號已確認，不得刪除" }, { status: 400 });
   }
 
   // 檢查是否已日結
-  const dayClosed = db.prepare(`
-    SELECT COUNT(*) as cnt FROM suspense_transactions
-    WHERE batch_no = ? AND is_day_closed = 1
-  `).get(batchNo) as { cnt: number };
-
-  if (dayClosed.cnt > 0) {
+  if (suspenseRepo.countDayClosedByBatch(db, batchNo) > 0) {
     return NextResponse.json({ error: "已日結，不得刪除" }, { status: 400 });
   }
 
   // 檢查通報鎖定
-  const reportLocked = db.prepare(`
-    SELECT COUNT(*) as cnt FROM suspense_transactions
-    WHERE batch_no = ? AND suspense_type = 'DAILY' AND is_report_locked = 1
-  `).get(batchNo) as { cnt: number };
-
-  if (reportLocked.cnt > 0) {
+  if (suspenseRepo.countDailyReportLockedByBatch(db, batchNo) > 0) {
     return NextResponse.json({ error: "已通報鎖定之日常暫收不得刪除" }, { status: 400 });
   }
 
   const deleteAll = db.transaction(() => {
-    const result = db.prepare("DELETE FROM suspense_transactions WHERE batch_no = ?").run(batchNo);
-    db.prepare("DELETE FROM batch_confirmations WHERE batch_no = ?").run(batchNo);
-    return result.changes;
+    const changes = suspenseRepo.deleteByBatch(db, batchNo);
+    batchRepo.deleteByBatch(db, batchNo);
+    return changes;
   });
 
   const count = deleteAll();
@@ -354,14 +276,13 @@ export function ensureBatchOwnership(
   batchNo: string,
   userId: number
 ): string | null {
-  const refRow = db.prepare("SELECT suspense_date FROM suspense_transactions WHERE batch_no = ? LIMIT 1").get(batchNo) as { suspense_date: string } | undefined;
-  const accessible = getAccessibleAccountCodes(db, userId, refRow?.suspense_date);
+  const refDate = suspenseRepo.findRefDateByBatch(db, batchNo);
+  const accessible = getAccessibleAccountCodes(db, userId, refDate);
   if (accessible === null) return null; // 主管
 
-  const accounts = db.prepare("SELECT DISTINCT account_code FROM suspense_transactions WHERE batch_no = ?").all(batchNo) as Array<{ account_code: string }>;
+  const accounts = suspenseRepo.distinctAccountCodesByBatch(db, batchNo);
   const allowed = new Set(accessible);
-  const denied = accounts.filter(a => !allowed.has(a.account_code));
-  if (denied.length > 0) {
+  if (accounts.some(code => !allowed.has(code))) {
     return "此批號包含您無權維護的帳號，無法操作";
   }
   return null;
