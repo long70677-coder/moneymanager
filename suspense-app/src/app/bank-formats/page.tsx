@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
+import { PageShell, PageHeader, Card, CardHeader, Btn, Toast, EmptyState } from "@/components/ui";
 
 type ColRef = { by: "name" | "index"; key: string };
 interface FormState {
@@ -36,6 +37,12 @@ interface Profile {
   engine: string; encoding: string; delimiter: string; date_format: string | null;
   status: string; column_map: Record<string, ColRef>;
 }
+
+const STATUS_LABEL: Record<string, { label: string; cls: string }> = {
+  ACTIVE: { label: "啟用", cls: "bg-[#DCFCE7] text-[#166534]" },
+  DRAFT: { label: "草稿", cls: "bg-[#fef3c7] text-[#b45309]" },
+  RETIRED: { label: "停用", cls: "bg-[#eef0f4] text-[#7a7d85]" },
+};
 
 export default function BankFormatsPage() {
   const [profiles, setProfiles] = useState<Profile[]>([]);
@@ -107,114 +114,137 @@ export default function BankFormatsPage() {
     setForm(f => ({ ...f, cm: { ...f.cm, [field]: { ...f.cm[field], ...patch } } }));
 
   return (
-    <main className="mt-16 ml-64 p-8 flex flex-col gap-6 flex-1 bg-[#f7f8fb] min-h-[calc(100vh-4rem)]">
-      <div>
-        <p className="text-xs text-[#7a7d85] mb-1 flex items-center gap-1">
-          <span>系統設定</span><span className="material-symbols-outlined text-[14px]">chevron_right</span>
-          <span className="text-[#2563EB] font-medium">銀行格式設定</span>
-        </p>
-        <h2 className="text-2xl font-bold text-[#1b1b1e]">銀行格式設定</h2>
-        <p className="text-sm text-[#7a7d85] mt-1">設定各銀行餘額檔的解析方式（鍵＝銀行＋幣別，幣別可用 ZZZ 表共用）。新增銀行或調整格式於此維護，不需改程式。</p>
-      </div>
+    <PageShell>
+      <PageHeader
+        group="設定維護"
+        title="銀行格式設定"
+        description="設定各銀行餘額檔的解析方式（鍵＝銀行＋幣別，幣別可用 ZZZ 表共用）。新增銀行或調整格式於此維護，不需改程式。"
+      />
 
-      {msg && (
-        <div className={`p-3 border rounded-lg text-sm shadow-sm ${msg.t === "ok" ? "bg-[#DCFCE7] border-[#bbf7d0] text-[#166534]" : "bg-[#FEE2E2] border-[#fecaca] text-[#991B1B]"}`}>{msg.m}</div>
-      )}
+      {msg && <Toast type={msg.t === "ok" ? "success" : "error"} text={msg.m} onClose={() => setMsg(null)} />}
 
       {/* 編輯表單 */}
-      <section className="bg-white border border-[#e6e8ef] rounded-xl p-5 shadow-sm flex flex-col gap-4">
-        <h3 className="text-sm font-semibold flex items-center gap-2">
-          <span className="material-symbols-outlined text-[#2563EB] text-[20px]">{form.id ? "edit" : "add_circle"}</span>
-          {form.id ? `編輯設定 #${form.id}` : "新增格式設定"}
-        </h3>
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          <Field label="銀行代碼"><input value={form.bank_code} onChange={e => setForm(f => ({ ...f, bank_code: e.target.value }))} className={inp} /></Field>
-          <Field label="幣別 (或 ZZZ)"><input value={form.currency} onChange={e => setForm(f => ({ ...f, currency: e.target.value }))} className={inp} /></Field>
-          <Field label="設定名稱"><input value={form.profile_name} onChange={e => setForm(f => ({ ...f, profile_name: e.target.value }))} className={inp} /></Field>
-          <Field label="狀態">
-            <select value={form.status} onChange={e => setForm(f => ({ ...f, status: e.target.value }))} className={inp}>
-              <option value="ACTIVE">啟用</option><option value="DRAFT">草稿</option><option value="RETIRED">停用</option>
-            </select>
-          </Field>
-          <Field label="解析引擎">
-            <select value={form.engine} onChange={e => setForm(f => ({ ...f, engine: e.target.value }))} className={inp}>
-              <option value="DELIMITED">分隔檔</option>
-              <option value="FIXED_WIDTH">固定寬度（未支援）</option>
-              <option value="EXCEL">Excel（未支援）</option>
-            </select>
-          </Field>
-          <Field label="編碼">
-            <select value={form.encoding} onChange={e => setForm(f => ({ ...f, encoding: e.target.value }))} className={inp}>
-              <option value="UTF-8">UTF-8</option><option value="BIG5">BIG5（未支援）</option>
-            </select>
-          </Field>
-          <Field label="分隔符"><input value={form.delimiter} onChange={e => setForm(f => ({ ...f, delimiter: e.target.value }))} className={inp} /></Field>
-          <Field label="略過表頭行數"><input type="number" value={form.skip_rows} onChange={e => setForm(f => ({ ...f, skip_rows: Number(e.target.value) }))} className={inp} /></Field>
-          <Field label="日期格式"><input value={form.date_format} onChange={e => setForm(f => ({ ...f, date_format: e.target.value }))} placeholder="YYYY-MM-DD 或 YYY/MM/DD(民國)" className={inp} /></Field>
-        </div>
+      <Card className="overflow-hidden">
+        <CardHeader
+          icon={form.id ? "edit" : "add_circle"}
+          title={form.id ? `編輯設定 #${form.id}` : "新增格式設定"}
+          right={form.id ? <span className="text-xs text-[#b45309] bg-[#fffbeb] border border-[#fde68a] px-2.5 py-1 rounded-full">編輯模式</span> : undefined}
+        />
+        <div className="p-5 flex flex-col gap-5">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <Field label="銀行代碼"><input value={form.bank_code} onChange={e => setForm(f => ({ ...f, bank_code: e.target.value }))} className={inp} placeholder="例：012" /></Field>
+            <Field label="幣別 (或 ZZZ)"><input value={form.currency} onChange={e => setForm(f => ({ ...f, currency: e.target.value }))} className={inp} placeholder="NTD / ZZZ" /></Field>
+            <Field label="設定名稱"><input value={form.profile_name} onChange={e => setForm(f => ({ ...f, profile_name: e.target.value }))} className={inp} placeholder="例：台北富邦 台幣" /></Field>
+            <Field label="狀態">
+              <select value={form.status} onChange={e => setForm(f => ({ ...f, status: e.target.value }))} className={inp}>
+                <option value="ACTIVE">啟用</option><option value="DRAFT">草稿</option><option value="RETIRED">停用</option>
+              </select>
+            </Field>
+            <Field label="解析引擎">
+              <select value={form.engine} onChange={e => setForm(f => ({ ...f, engine: e.target.value }))} className={inp}>
+                <option value="DELIMITED">分隔檔</option>
+                <option value="FIXED_WIDTH">固定寬度（未支援）</option>
+                <option value="EXCEL">Excel（未支援）</option>
+              </select>
+            </Field>
+            <Field label="編碼">
+              <select value={form.encoding} onChange={e => setForm(f => ({ ...f, encoding: e.target.value }))} className={inp}>
+                <option value="UTF-8">UTF-8</option><option value="BIG5">BIG5（未支援）</option>
+              </select>
+            </Field>
+            <Field label="分隔符"><input value={form.delimiter} onChange={e => setForm(f => ({ ...f, delimiter: e.target.value }))} className={inp} /></Field>
+            <Field label="略過表頭行數"><input type="number" value={form.skip_rows} onChange={e => setForm(f => ({ ...f, skip_rows: Number(e.target.value) }))} className={inp} /></Field>
+            <Field label="日期格式"><input value={form.date_format} onChange={e => setForm(f => ({ ...f, date_format: e.target.value }))} placeholder="YYYY-MM-DD 或 YYY/MM/DD(民國)" className={inp} /></Field>
+          </div>
 
-        <div className="border-t border-[#eef0f4] pt-3">
-          <p className="text-xs font-semibold text-[#44474e] mb-2">欄位對應（以欄名或欄序對應到目標欄位）</p>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            {(["balanceDate", "accountCode", "currency", "balance"] as const).map(field => (
-              <div key={field} className="flex items-center gap-2">
-                <span className="w-20 text-xs text-[#44474e]">{CM_LABEL[field]}</span>
-                <select value={form.cm[field].by} onChange={e => setCm(field, { by: e.target.value as "name" | "index" })} className="h-9 border border-[#d8dbe3] rounded-lg px-2 text-sm">
-                  <option value="name">欄名</option><option value="index">欄序</option>
-                </select>
-                <input value={form.cm[field].key} onChange={e => setCm(field, { key: e.target.value })} className="flex-1 h-9 border border-[#d8dbe3] rounded-lg px-2 text-sm" placeholder={form.cm[field].by === "index" ? "0,1,2…" : "欄位名稱"} />
-              </div>
-            ))}
+          <div className="border border-[#e6e8ef] rounded-xl p-4 bg-[#fafbfd]">
+            <p className="text-xs font-semibold text-[#475569] mb-3 flex items-center gap-1.5">
+              <span className="material-symbols-outlined text-[16px] text-[#2563EB]">swap_horiz</span>
+              欄位對應（以欄名或欄序對應到目標欄位）
+            </p>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              {(["balanceDate", "accountCode", "currency", "balance"] as const).map(field => (
+                <div key={field} className="flex items-center gap-2 bg-white border border-[#e6e8ef] rounded-lg px-3 py-2">
+                  <span className="w-20 text-xs font-medium text-[#475569] shrink-0">{CM_LABEL[field]}</span>
+                  <select value={form.cm[field].by} onChange={e => setCm(field, { by: e.target.value as "name" | "index" })}
+                    className="h-8 border border-[#d8dbe3] rounded-lg px-2 text-xs bg-white outline-none focus:border-[#2563EB]">
+                    <option value="name">欄名</option><option value="index">欄序</option>
+                  </select>
+                  <input value={form.cm[field].key} onChange={e => setCm(field, { key: e.target.value })}
+                    className="flex-1 h-8 border border-[#d8dbe3] rounded-lg px-2 text-sm bg-white outline-none focus:border-[#2563EB] min-w-0"
+                    placeholder={form.cm[field].by === "index" ? "0,1,2…" : "欄位名稱"} />
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="flex gap-2 pt-4 border-t border-[#eef0f4]">
+            <Btn variant="primary" icon={form.id ? "save" : "add"} onClick={submit} className="px-6">
+              {form.id ? "儲存修改" : "新增"}
+            </Btn>
+            {form.id && <Btn icon="close" onClick={() => setForm(EMPTY)}>取消編輯</Btn>}
           </div>
         </div>
-
-        <div className="flex gap-2 pt-2">
-          <button onClick={submit} className="h-10 px-6 bg-[#2563EB] hover:bg-[#1D4ED8] text-white rounded-lg font-medium text-sm">{form.id ? "儲存修改" : "新增"}</button>
-          {form.id && <button onClick={() => setForm(EMPTY)} className="h-10 px-4 bg-white border border-[#d8dbe3] hover:bg-[#f5f6fa] rounded-lg text-sm">取消編輯</button>}
-        </div>
-      </section>
+      </Card>
 
       {/* 清單 */}
-      <section className="bg-white border border-[#e6e8ef] rounded-xl shadow-sm overflow-hidden">
-        <div className="px-5 py-4 border-b border-[#e6e8ef] flex items-center gap-2">
-          <span className="material-symbols-outlined text-[#2563EB] text-[20px]">tune</span>
-          <h3 className="text-sm font-semibold">已設定格式（{profiles.length}）</h3>
-        </div>
-        <div className="overflow-x-auto">
-          <table className="w-full text-left border-collapse min-w-max">
-            <thead className="bg-[#f1f4f9] border-b border-[#e6e8ef] text-xs font-semibold text-[#44474e]">
-              <tr>
-                <th className="px-4 py-3">銀行</th><th className="px-4 py-3">幣別</th><th className="px-4 py-3">名稱</th>
-                <th className="px-4 py-3">引擎</th><th className="px-4 py-3">編碼/分隔</th><th className="px-4 py-3">日期格式</th>
-                <th className="px-4 py-3">狀態</th><th className="px-4 py-3 text-right">操作</th>
-              </tr>
-            </thead>
-            <tbody className="text-sm divide-y divide-[#eef0f4]">
-              {profiles.map(p => (
-                <tr key={p.id} className="hover:bg-[#f8f9fc]">
-                  <td className="px-4 py-2.5 font-medium">{p.bank_code}</td>
-                  <td className="px-4 py-2.5">{p.currency === "ZZZ" ? <span className="px-2 py-0.5 bg-[#fef3c7] text-[#b45309] rounded-full text-xs">ZZZ 共用</span> : p.currency}</td>
-                  <td className="px-4 py-2.5 text-[#44474e]">{p.profile_name}</td>
-                  <td className="px-4 py-2.5">{p.engine}</td>
-                  <td className="px-4 py-2.5 text-[#44474e]">{p.encoding}／{p.delimiter === "," ? "逗號" : p.delimiter}</td>
-                  <td className="px-4 py-2.5 font-mono text-xs">{p.date_format}</td>
-                  <td className="px-4 py-2.5"><span className={`px-2 py-0.5 rounded-full text-xs ${p.status === "ACTIVE" ? "bg-[#DCFCE7] text-[#166534]" : "bg-[#eef0f4] text-[#7a7d85]"}`}>{p.status}</span></td>
-                  <td className="px-4 py-2.5 text-right whitespace-nowrap">
-                    <button onClick={() => edit(p)} className="text-[#2563EB] hover:underline text-xs mr-3">編輯</button>
-                    <button onClick={() => del(p.id)} className="text-[#991B1B] hover:underline text-xs">刪除</button>
-                  </td>
+      <Card className="overflow-hidden">
+        <CardHeader
+          icon="tune"
+          title="已設定格式"
+          right={<span className="text-xs text-[#7a7d85] bg-[#f1f5f9] px-2.5 py-1 rounded-full">共 {profiles.length} 筆</span>}
+        />
+        {profiles.length === 0 ? (
+          <EmptyState icon="tune" title="尚無格式設定" hint="於上方表單新增第一筆銀行格式設定。" />
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-left border-collapse min-w-max">
+              <thead className="bg-[#f8fafc] border-b border-[#e6e8ef] text-xs font-semibold text-[#475569]">
+                <tr>
+                  <th className="px-4 py-3">銀行</th><th className="px-4 py-3">幣別</th><th className="px-4 py-3">名稱</th>
+                  <th className="px-4 py-3">引擎</th><th className="px-4 py-3">編碼／分隔</th><th className="px-4 py-3">日期格式</th>
+                  <th className="px-4 py-3">狀態</th><th className="px-4 py-3 text-right">操作</th>
                 </tr>
-              ))}
-              {profiles.length === 0 && <tr><td colSpan={8} className="px-4 py-8 text-center text-[#9aa0ad]">尚無格式設定</td></tr>}
-            </tbody>
-          </table>
-        </div>
-      </section>
-    </main>
+              </thead>
+              <tbody className="text-sm divide-y divide-[#eef0f4]">
+                {profiles.map(p => {
+                  const st = STATUS_LABEL[p.status] || { label: p.status, cls: "bg-[#eef0f4] text-[#7a7d85]" };
+                  return (
+                    <tr key={p.id} className={`hover:bg-[#f8f9fc] transition-colors ${form.id === p.id ? "bg-[#eff6ff]" : ""}`}>
+                      <td className="px-4 py-2.5">
+                        <span className="px-2 py-0.5 bg-[#f1f5f9] text-[#475569] rounded-md text-xs font-mono font-medium">{p.bank_code}</span>
+                      </td>
+                      <td className="px-4 py-2.5">
+                        {p.currency === "ZZZ"
+                          ? <span className="px-2 py-0.5 bg-[#fef3c7] text-[#b45309] rounded-full text-xs">ZZZ 共用</span>
+                          : <span className="font-medium">{p.currency}</span>}
+                      </td>
+                      <td className="px-4 py-2.5 text-[#44474e]">{p.profile_name}</td>
+                      <td className="px-4 py-2.5"><span className="px-2 py-0.5 bg-[#eef2ff] text-[#4338ca] rounded-full text-xs">{p.engine}</span></td>
+                      <td className="px-4 py-2.5 text-[#44474e] text-xs">{p.encoding}／{p.delimiter === "," ? "逗號" : p.delimiter}</td>
+                      <td className="px-4 py-2.5 font-mono tabular-nums text-xs">{p.date_format}</td>
+                      <td className="px-4 py-2.5"><span className={`px-2 py-0.5 rounded-full text-xs ${st.cls}`}>{st.label}</span></td>
+                      <td className="px-4 py-2.5 text-right whitespace-nowrap">
+                        <button onClick={() => edit(p)} className="inline-flex items-center gap-0.5 text-[#2563EB] hover:bg-[#eff6ff] rounded-md px-2 py-1 text-xs transition-colors mr-1">
+                          <span className="material-symbols-outlined text-[15px]">edit</span>編輯
+                        </button>
+                        <button onClick={() => del(p.id)} className="inline-flex items-center gap-0.5 text-[#b91c1c] hover:bg-[#fef2f2] rounded-md px-2 py-1 text-xs transition-colors">
+                          <span className="material-symbols-outlined text-[15px]">delete</span>刪除
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </Card>
+    </PageShell>
   );
 }
 
-const inp = "h-9 border border-[#d8dbe3] rounded-lg px-2 text-sm outline-none focus:border-[#2563EB] bg-white w-full";
+const inp = "h-10 border border-[#d8dbe3] rounded-lg px-3 text-sm outline-none focus:border-[#2563EB] focus:ring-2 focus:ring-[#2563EB]/20 bg-white w-full transition";
 const CM_LABEL: Record<string, string> = { balanceDate: "餘額日期*", accountCode: "帳號", currency: "幣別", balance: "餘額*" };
 
 function normRef(r: ColRef) {

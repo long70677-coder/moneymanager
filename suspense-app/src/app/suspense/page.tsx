@@ -3,6 +3,7 @@
 import { useState, useCallback, useEffect } from "react";
 import { SUSPENSE_TYPE_MAP, type SuspenseTransaction, type BatchConfirmation } from "@/lib/types";
 import { useUser } from "@/components/UserProvider";
+import { PageShell, PageHeader, Card, Btn, Toast, EmptyState } from "@/components/ui";
 
 function formatNumber(val: number, currency: string = "NTD"): string {
   if (currency === "NTD") return val.toLocaleString("en-US", { minimumFractionDigits: 0 });
@@ -304,52 +305,37 @@ export default function SuspensePage() {
   }, []);
 
   return (
-    <main className="mt-16 ml-64 p-8 flex flex-col gap-6 flex-1 bg-[#f7f8fb] min-h-[calc(100vh-4rem)]">
-      {/* 標題與訊息 */}
-      <div className="flex flex-col gap-3">
-        <div>
-          <p className="text-xs text-[#7a7d85] mb-1 flex items-center gap-1">
-            <span>資金管理</span>
-            <span className="material-symbols-outlined text-[14px]">chevron_right</span>
-            <span className="text-[#2563EB] font-medium">暫收交易</span>
-          </p>
-          <h2 className="text-2xl font-bold text-[#1b1b1e]">暫收交易作業</h2>
-          <p className="text-sm text-[#7a7d85] mt-1">依銀行存摺餘額與公司帳列餘額之差額辦理立暫收，並進行批號確認與傳票產生。</p>
-          {currentUser && (
-            <div className={`mt-2 inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium ${
-              currentUser.role === "MANAGER"
-                ? "bg-[#ede9fe] text-[#6d28d9]"
-                : "bg-[#dbeafe] text-[#1d4ed8]"
-            }`}>
-              <span className="material-symbols-outlined text-[14px]">
-                {currentUser.role === "MANAGER" ? "visibility" : "person"}
-              </span>
-              {currentUser.role === "MANAGER"
-                ? `${currentUser.user_name}（主管）：可檢視與操作所有帳號及批號`
-                : `${currentUser.user_name}（經辦）：僅顯示與操作您負責的帳號`}
-            </div>
-          )}
-        </div>
-        {message && (
-          <div className={`flex items-center gap-2 p-3 border rounded-lg text-sm shadow-sm ${
-            message.type === "success"
-              ? "bg-[#DCFCE7] border-[#bbf7d0] text-[#166534]"
-              : "bg-[#FEE2E2] border-[#fecaca] text-[#991B1B]"
+    <PageShell>
+      <PageHeader
+        group="日常作業"
+        title="暫收交易作業"
+        description="依銀行存摺餘額與公司帳列餘額之差額辦理立暫收，並進行批號確認與傳票產生。"
+      >
+        {currentUser && (
+          <div className={`mt-2.5 inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium ${
+            currentUser.role === "MANAGER"
+              ? "bg-[#ede9fe] text-[#6d28d9]"
+              : "bg-[#dbeafe] text-[#1d4ed8]"
           }`}>
-            <span className="material-symbols-outlined text-[20px]">{message.type === "success" ? "task_alt" : "error"}</span>
-            <span dangerouslySetInnerHTML={{ __html: message.text }} />
-            <button className="ml-auto hover:opacity-70" onClick={() => setMessage(null)}>
-              <span className="material-symbols-outlined text-[18px]">close</span>
-            </button>
+            <span className="material-symbols-outlined text-[14px]">
+              {currentUser.role === "MANAGER" ? "visibility" : "person"}
+            </span>
+            {currentUser.role === "MANAGER"
+              ? `${currentUser.user_name}（主管）：可檢視與操作所有帳號及批號`
+              : `${currentUser.user_name}（經辦）：僅顯示與操作您負責的帳號`}
           </div>
         )}
-      </div>
+      </PageHeader>
+
+      {message && <Toast type={message.type} text={message.text} html onClose={() => setMessage(null)} />}
 
       {/* 查詢條件區 */}
-      <section className="bg-white border border-[#e6e8ef] rounded-xl p-5 shadow-sm">
-        <div className="flex items-center gap-2 mb-4">
-          <span className="material-symbols-outlined text-[#2563EB] text-[20px]">filter_alt</span>
-          <h3 className="text-sm font-semibold text-[#1b1b1e]">查詢條件</h3>
+      <Card className="p-5">
+        <div className="flex items-center gap-2.5 mb-4">
+          <span className="w-8 h-8 rounded-lg bg-[#eff4ff] text-[#2563EB] flex items-center justify-center">
+            <span className="material-symbols-outlined text-[18px]">filter_alt</span>
+          </span>
+          <h3 className="text-sm font-semibold text-[#0f172a]">查詢條件</h3>
         </div>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-5">
           <div className="flex flex-col gap-1.5">
@@ -406,35 +392,16 @@ export default function SuspensePage() {
         </div>
 
         <div className="flex flex-wrap items-center gap-2.5 pt-4 border-t border-[#eef0f4]">
-          <button
-            onClick={handleQuery}
-            disabled={loading}
-            className="h-10 px-6 bg-[#2563EB] hover:bg-[#1D4ED8] text-white rounded-lg font-medium text-sm flex items-center gap-2 transition-colors shadow-sm disabled:opacity-50"
-          >
-            <span className="material-symbols-outlined text-[18px]">search</span>
-            查詢
-          </button>
-          <button
-            onClick={handleAdd}
-            disabled={loading}
-            className="h-10 px-4 bg-white border border-[#d8dbe3] hover:bg-[#f5f6fa] text-[#1b1b1e] rounded-lg font-medium text-sm flex items-center gap-2 transition-colors disabled:opacity-50"
-          >
-            <span className="material-symbols-outlined text-[18px]">add</span>
-            新增批號
-          </button>
-          <button
-            onClick={handleSave}
-            disabled={loading || Object.keys(editedAmounts).length === 0}
-            className="h-10 px-4 bg-white border border-[#d8dbe3] hover:bg-[#f5f6fa] text-[#1b1b1e] rounded-lg font-medium text-sm flex items-center gap-2 transition-colors disabled:opacity-50"
-          >
-            <span className="material-symbols-outlined text-[18px]">save</span>
+          <Btn variant="primary" icon="search" onClick={handleQuery} disabled={loading} className="px-6">查詢</Btn>
+          <Btn icon="add" onClick={handleAdd} disabled={loading}>新增批號</Btn>
+          <Btn icon="save" onClick={handleSave} disabled={loading || Object.keys(editedAmounts).length === 0}>
             儲存修改
             {Object.keys(editedAmounts).length > 0 && (
               <span className="ml-1 px-1.5 py-0.5 bg-[#2563EB] text-white rounded-full text-[11px]">{Object.keys(editedAmounts).length}</span>
             )}
-          </button>
+          </Btn>
         </div>
-      </section>
+      </Card>
 
       {/* 批號卡片清單 */}
       {batches.length > 0 ? (
@@ -453,15 +420,15 @@ export default function SuspensePage() {
           ))}
         </div>
       ) : (
-        <section className="bg-white border border-dashed border-[#d8dbe3] rounded-xl shadow-sm flex flex-col items-center justify-center py-16 text-center">
-          <div className="w-16 h-16 rounded-full bg-[#f1f4f9] flex items-center justify-center mb-4">
-            <span className="material-symbols-outlined text-[32px] text-[#9aa0ad]">receipt_long</span>
-          </div>
-          <p className="text-[#44474e] font-medium">尚無批號資料</p>
-          <p className="text-sm text-[#9aa0ad] mt-1">請於上方輸入批號並點選「查詢」，或點選「新增批號」建立暫收交易；每個批號會以獨立卡片往下顯示。</p>
+        <section className="bg-white border border-dashed border-[#d8dbe3] rounded-2xl shadow-sm">
+          <EmptyState
+            icon="receipt_long"
+            title="尚無批號資料"
+            hint="請於上方輸入批號並點選「查詢」，或點選「新增批號」建立暫收交易；每個批號會以獨立卡片往下顯示。"
+          />
         </section>
       )}
-    </main>
+    </PageShell>
   );
 }
 
@@ -488,7 +455,7 @@ function BatchCardView({
   const cardCurrency = card.transactions[0]?.currency || card.currency;
 
   return (
-    <section className="bg-white border border-[#e6e8ef] rounded-xl shadow-sm overflow-hidden">
+    <section className="bg-white border border-[#e6e8ef] rounded-2xl shadow-[0_1px_3px_rgba(15,23,42,0.06)] overflow-hidden">
       {/* 卡片標題列（可點擊展開/收合） */}
       <div
         className="px-5 py-4 flex flex-wrap items-center justify-between gap-3 cursor-pointer hover:bg-[#f8f9fc] transition-colors"
@@ -498,7 +465,9 @@ function BatchCardView({
           <span className={`material-symbols-outlined text-[#7a7d85] transition-transform duration-200 ${card.expanded ? "rotate-90" : ""}`}>
             chevron_right
           </span>
-          <span className="material-symbols-outlined text-[#2563EB]">folder_open</span>
+          <span className="w-9 h-9 rounded-lg bg-[#eff4ff] text-[#2563EB] flex items-center justify-center shrink-0">
+            <span className="material-symbols-outlined text-[20px]">folder_open</span>
+          </span>
           <div className="min-w-0">
             <div className="flex items-center gap-2">
               <span className="font-semibold text-[#1b1b1e]">批號 {card.batchNo}</span>
@@ -565,7 +534,7 @@ function BatchCardView({
         <div className="border-t border-[#e6e8ef]">
           <div className="overflow-x-auto w-full">
             <table className="w-full text-left border-collapse min-w-max">
-              <thead className="bg-[#f1f4f9] border-b border-[#e6e8ef] text-xs font-semibold text-[#44474e]">
+              <thead className="bg-[#f8fafc] border-b border-[#e6e8ef] text-xs font-semibold text-[#475569]">
                 <tr>
                   <th className="px-3 py-3 whitespace-nowrap">帳號短碼</th>
                   <th className="px-3 py-3 whitespace-nowrap">帳號用途</th>
