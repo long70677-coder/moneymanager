@@ -23,6 +23,34 @@ function nextBusinessDay(iso: string): string {
   return d.toISOString().slice(0, 10);
 }
 
+export interface PreviewResult {
+  fileName: string;
+  accountCode: string | null;
+  profileId: number | null;
+  records: import("@/domain/ingest.types").NormalizedBalanceRecord[];
+  errors: RowError[];
+  error?: string;
+}
+
+/** 試轉預覽（dry-run）：路由→profile→解析→對應，只回結果不寫入。 */
+export function previewFile(db: DB, fileName: string, content: Buffer): PreviewResult {
+  const base: PreviewResult = { fileName, accountCode: null, profileId: null, records: [], errors: [] };
+  const matched = accountRepo.findByImportFileName(db, fileName);
+  if (matched.length === 0) return { ...base, error: "檔名比對不到帳號" };
+  if (matched.length > 1) return { ...base, error: "檔名命中多個帳號" };
+  const account = matched[0];
+  const accountCurrency = (account.currency_type as string) === "TWD" ? "NTD" : "ZZZ";
+  const profile = bankFormatRepo.resolve(db, account.bank_code as string, accountCurrency);
+  if (!profile) return { ...base, accountCode: account.account_code as string, error: `查無格式設定（銀行 ${account.bank_code}）` };
+  try {
+    const rows = getParser(profile.engine)(content, profile);
+    const mapped = applyMapping(rows, profile, { currency: accountCurrency === "NTD" ? "NTD" : undefined });
+    return { fileName, accountCode: account.account_code as string, profileId: profile.id, records: mapped.records, errors: mapped.errors };
+  } catch (e) {
+    return { ...base, accountCode: account.account_code as string, profileId: profile.id, error: e instanceof Error ? e.message : "解析失敗" };
+  }
+}
+
 /** 轉入單一檔案（一檔一帳號）。回傳該檔的轉檔結果；逐檔獨立，不丟例外讓整批中斷。 */
 export function ingestFile(db: DB, input: IngestInput): ImportResult {
   const fail = (msg: string, extra?: Partial<ImportResult>): ImportResult => ({

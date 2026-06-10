@@ -14,6 +14,52 @@ export const balanceRepo = {
     return row?.balance;
   },
 
+  /** 取該 key 最新轉入次別那筆（任何 data_type）；供畫面顯示。 */
+  getLatest(db: DB, balanceDate: string, accountCode: string, currency: string): Row | undefined {
+    return db.prepare(`
+      SELECT * FROM passbook_balances
+      WHERE balance_date = ? AND account_code = ? AND currency = ?
+      ORDER BY import_seq DESC LIMIT 1
+    `).get(balanceDate, accountCode, currency) as Row | undefined;
+  },
+
+  /** 人工修改餘額：設金額、data_type→MANUAL、回到未覆核。 */
+  updateManualById(db: DB, id: number, p: { balance: number; updatedBy: string }): void {
+    db.prepare(`
+      UPDATE passbook_balances
+      SET balance = ?, data_type = 'MANUAL', is_reviewed = 0,
+          reviewed_by = NULL, reviewed_at = NULL,
+          updated_by = ?, updated_at = datetime('now')
+      WHERE id = ?
+    `).run(p.balance, p.updatedBy, id);
+  },
+
+  /** 新增一筆人工餘額（次別 1）。 */
+  insertManual(db: DB, p: { balanceDate: string; accountCode: string; currency: string; balance: number; createdBy: string }): void {
+    db.prepare(`
+      INSERT INTO passbook_balances
+        (balance_date, account_code, currency, balance, data_type, import_seq, is_reviewed, created_by, updated_by)
+      VALUES (?, ?, ?, ?, 'MANUAL', 1, 0, ?, ?)
+    `).run(p.balanceDate, p.accountCode, p.currency, p.balance, p.createdBy, p.createdBy);
+  },
+
+  /** 全批覆核：指定日期+幣別+帳號範圍的存摺餘額設為已覆核。回傳覆核筆數。 */
+  reviewBatch(db: DB, balanceDate: string, currency: string, accountCodes: string[] | null, reviewer: string): number {
+    let sql = `
+      UPDATE passbook_balances
+      SET is_reviewed = 1, reviewed_by = ?, reviewed_at = datetime('now'),
+          updated_by = ?, updated_at = datetime('now')
+      WHERE balance_date = ? AND currency = ?
+    `;
+    const params: unknown[] = [reviewer, reviewer, balanceDate, currency];
+    if (accountCodes != null) {
+      if (accountCodes.length === 0) return 0;
+      sql += ` AND account_code IN (${accountCodes.map(() => "?").join(",")})`;
+      params.push(...accountCodes);
+    }
+    return db.prepare(sql).run(...params).changes;
+  },
+
   /** 該 key 目前最大轉入次別（無資料回 0）。 */
   getMaxSeq(db: DB, balanceDate: string, accountCode: string, currency: string): number {
     const row = db.prepare(`
