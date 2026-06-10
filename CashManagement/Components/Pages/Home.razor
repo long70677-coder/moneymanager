@@ -1,0 +1,45 @@
+@page "/"
+@inject CurrentUserState UserState
+
+<PageTitle>銀行存款資金管理系統</PageTitle>
+
+@* 系統首頁：中性入口，不預選任何功能 *@
+<div class="flex flex-col items-center text-center pt-10 pb-4">
+    <div class="w-16 h-16 rounded-2xl bg-gradient-to-br from-[#2563EB] to-[#1a3a7a] flex items-center justify-center ring-1 ring-white/20 shadow-lg shadow-blue-900/20 mb-5">
+        <span class="material-symbols-outlined text-white text-[34px]">account_balance</span>
+    </div>
+    <h2 class="text-2xl font-bold text-[#111827] tracking-tight">銀行存款資金管理系統</h2>
+    <p class="text-sm text-[#6B7280] mt-2 max-w-xl leading-relaxed">
+        @(UserState.CurrentUser != null ? $"{UserState.CurrentUser.UserName}，您好。" : "")請從左側選單或下方卡片進入功能。
+    </p>
+</div>
+
+<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 max-w-5xl w-full mx-auto">
+    @foreach (var f in Features)
+    {
+        <a href="@f.Href" class="app-card app-card-hover p-5 flex flex-col gap-3 group no-underline">
+            <span class="w-11 h-11 rounded-xl bg-[#EFF6FF] text-[#2563EB] flex items-center justify-center group-hover:bg-[#2563EB] group-hover:text-white transition-colors duration-200">
+                <span class="material-symbols-outlined text-[22px]">@f.Icon</span>
+            </span>
+            <div>
+                <p class="font-semibold text-[#111827] flex items-center gap-1">
+                    @f.Label
+                    <span class="material-symbols-outlined text-[16px] text-[#9CA3AF] group-hover:text-[#2563EB] group-hover:translate-x-0.5 transition-all duration-200">arrow_forward</span>
+                </p>
+                <p class="text-xs text-[#6B7280] mt-1 leading-relaxed">@f.Desc</p>
+            </div>
+        </a>
+    }
+</div>
+
+@code {
+    private record Feature(string Icon, string Label, string Href, string Desc);
+
+    private static readonly Feature[] Features =
+    [
+        new("savings", "存摺餘額轉檔", "/balances", "匯入銀行存摺餘額，與帳列餘額比對、調整與覆核。"),
+        new("history_edu", "暫收交易", "/suspense", "依餘額差額立暫收，批號確認後產生傳票與通報。"),
+        new("database", "基本資料維護", "/master", "檢視銀行帳號基本資料與使用者維護權限。"),
+        new("tune", "銀行格式設定", "/bank-formats", "維護各銀行餘額檔解析格式，新增銀行不需改程式。"),
+    ];
+}

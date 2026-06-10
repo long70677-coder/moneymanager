@@ -1,0 +1,35 @@
+@* 小型統計卡（hover 微浮起） *@
+<div class="app-card app-card-hover px-4 py-3 flex items-center gap-3">
+    <span class="@($"w-10 h-10 rounded-lg flex items-center justify-center shrink-0 {IconBoxClass}")">
+        <span class="material-symbols-outlined text-[20px]">@Icon</span>
+    </span>
+    <div class="leading-tight">
+        <p class="text-[11px] text-[#6B7280]">@Label</p>
+        <p class="@($"text-lg font-bold tabular-nums {ToneClass}")">@Value</p>
+    </div>
+</div>
+
+@code {
+    [Parameter] public string Icon { get; set; } = "";
+    [Parameter] public string Label { get; set; } = "";
+    [Parameter] public string Value { get; set; } = "";
+    [Parameter] public string Tone { get; set; } = "default"; // default | blue | red | amber | green
+
+    private string ToneClass => Tone switch
+    {
+        "blue" => "text-[#2563EB]",
+        "red" => "text-[#B91C1C]",
+        "amber" => "text-[#B45309]",
+        "green" => "text-[#15803D]",
+        _ => "text-[#111827]",
+    };
+
+    private string IconBoxClass => Tone switch
+    {
+        "blue" => "bg-[#EFF6FF] text-[#2563EB]",
+        "red" => "bg-[#FEF2F2] text-[#B91C1C]",
+        "amber" => "bg-[#FFFBEB] text-[#B45309]",
+        "green" => "bg-[#F0FDF4] text-[#15803D]",
+        _ => "bg-[#F3F4F6] text-[#6B7280]",
+    };
+}

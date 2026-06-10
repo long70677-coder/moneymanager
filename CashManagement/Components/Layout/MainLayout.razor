@@ -1,0 +1,160 @@
+@inherits LayoutComponentBase
+@inject NavigationManager Nav
+@inject CurrentUserState UserState
+@implements IDisposable
+
+@* 側邊導覽列 *@
+<nav class="bg-gradient-to-b from-[#0a1f44] via-[#081a3a] to-[#031027] text-[#dde2f4] h-screen w-64 fixed left-0 top-0 flex flex-col z-20 shadow-xl">
+    <div class="px-5 py-5 border-b border-white/10 flex items-center gap-3">
+        <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-[#2563EB] to-[#1a3a7a] flex items-center justify-center shrink-0 ring-1 ring-white/20 shadow-lg shadow-blue-900/40">
+            <span class="material-symbols-outlined text-white text-[22px]">account_balance</span>
+        </div>
+        <div>
+            <h1 class="font-bold text-white tracking-tight leading-tight">資金管理系統</h1>
+            <p class="text-[11px] text-[#8fa3cd] tracking-wide">銀行存款・後台作業</p>
+        </div>
+    </div>
+
+    <div class="flex-1 py-4 flex flex-col gap-5 px-3 overflow-y-auto">
+        @foreach (var group in NavGroups)
+        {
+            <div class="flex flex-col gap-1">
+                <p class="px-3 pb-1.5 text-[11px] font-medium uppercase tracking-widest text-[#5f74a3]">@group.Label</p>
+                @foreach (var item in group.Items)
+                {
+                    var active = CurrentPath.StartsWith(item.Href);
+                    <a href="@item.Href"
+                       class="@($"group relative flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-all duration-200 ease-out {(active ? "bg-white/12 text-white font-medium ring-1 ring-white/15 shadow-sm" : "text-[#a3b2d6] hover:bg-white/8 hover:text-white hover:translate-x-0.5")}")">
+                        @if (active)
+                        {
+                            <span class="absolute left-0 top-1/2 -translate-y-1/2 w-[3px] h-6 rounded-r-full bg-gradient-to-b from-[#60A5FA] to-[#2563EB]"></span>
+                        }
+                        <span class="@($"w-8 h-8 rounded-lg flex items-center justify-center shrink-0 transition-colors duration-200 {(active ? "bg-[#2563EB] text-white shadow shadow-blue-900/50" : "bg-white/6 text-[#8fa3cd] group-hover:text-white group-hover:bg-white/10")}")">
+                            <span class="material-symbols-outlined text-[19px]">@item.Icon</span>
+                        </span>
+                        <span class="flex-1 leading-tight">
+                            @item.Label
+                            <span class="@($"block text-[10px] font-normal tracking-wide transition-colors duration-200 {(active ? "text-[#a9c2f2]" : "text-[#5f74a3]")}")">@item.Desc</span>
+                        </span>
+                        @if (active)
+                        {
+                            <span class="w-1.5 h-1.5 rounded-full bg-[#7da2ee]"></span>
+                        }
+                    </a>
+                }
+            </div>
+        }
+    </div>
+
+    <div class="px-5 py-4 border-t border-white/10">
+        <p class="text-[11px] text-[#5f74a3] leading-relaxed">
+            CashManagement・Blazor Server<br />
+            人機共同維護・架構準則 ARCHITECTURE.md
+        </p>
+    </div>
+</nav>
+
+@* 頂部列 *@
+<header class="bg-white/85 backdrop-blur border-b border-[#E5E7EB] shadow-[0_1px_2px_rgba(17,24,39,0.03)] flex justify-between items-center h-16 px-8 w-[calc(100%-16rem)] ml-64 fixed top-0 z-10">
+    <div class="flex items-center gap-3">
+        <span class="font-bold text-[#031635] tracking-tight text-[15px]">@PageTitle</span>
+        <span class="hidden md:inline-flex items-center gap-1.5 px-2.5 py-1 bg-[#f1f5f9] text-[#475569] rounded-full text-xs">
+            <span class="material-symbols-outlined text-[15px]">calendar_today</span>
+            @DateTime.Today.ToString("yyyy/MM/dd (ddd)", new System.Globalization.CultureInfo("zh-TW"))
+        </span>
+    </div>
+    <div class="flex items-center gap-4">
+        <span class="px-2.5 py-1 bg-[#DCFCE7] text-[#166534] rounded-full text-xs font-medium hidden sm:flex items-center gap-1">
+            <span class="material-symbols-outlined text-[16px]">check_circle</span>系統運作正常
+        </span>
+
+        @* 操作者切換器（demo 用，正式版改為登入） *@
+        <div class="flex items-center gap-2 pl-3 border-l border-[#e6e8ef]">
+            <div class="@($"w-9 h-9 rounded-full flex items-center justify-center text-white text-sm font-bold {(UserState.CurrentUser?.Role == "MANAGER" ? "bg-gradient-to-br from-[#7c3aed] to-[#2563EB]" : "bg-gradient-to-br from-[#1a2b4b] to-[#2563EB]")}")">
+                @(UserState.CurrentUser != null && UserState.CurrentUser.UserName.Length > 0 ? UserState.CurrentUser.UserName.Substring(0, 1) : "?")
+            </div>
+            <div class="leading-tight">
+                <div class="flex items-center gap-1.5">
+                    <select value="@UserState.CurrentUser?.Id"
+                            @onchange="OnUserSwitched"
+                            class="text-sm font-medium text-[#1b1b1e] bg-transparent outline-none cursor-pointer hover:text-[#2563EB] -ml-0.5"
+                            title="切換目前操作者（demo 用，正式版改為登入）">
+                        @foreach (var u in UserState.Users)
+                        {
+                            <option value="@u.Id">@u.UserName</option>
+                        }
+                    </select>
+                    @if (UserState.CurrentUser != null)
+                    {
+                        <span class="@($"px-1.5 py-0.5 rounded text-[10px] font-medium {(UserState.CurrentUser.Role == "MANAGER" ? "bg-[#ede9fe] text-[#6d28d9]" : "bg-[#dbeafe] text-[#1d4ed8]")}")">
+                            @(Roles.Labels.GetValueOrDefault(UserState.CurrentUser.Role, UserState.CurrentUser.Role))
+                        </span>
+                    }
+                </div>
+                <p class="text-[11px] text-[#7a7d85]">點選姓名可切換操作者</p>
+            </div>
+        </div>
+    </div>
+</header>
+
+@* 頁面內容 *@
+<main class="mt-16 ml-64 p-8 flex flex-col gap-6 flex-1 min-h-[calc(100vh-4rem)]">
+    @Body
+</main>
+
+<div id="blazor-error-ui">
+    發生未預期的錯誤。
+    <a href="" class="reload">重新載入</a>
+    <a class="dismiss">🗙</a>
+</div>
+
+@code {
+    private record NavItem(string Icon, string Label, string Href, string Desc);
+    private record NavGroup(string Label, NavItem[] Items);
+
+    private static readonly NavGroup[] NavGroups =
+    [
+        new("日常作業",
+        [
+            new("savings", "存摺餘額轉檔", "/balances", "FUN2.1.1"),
+            new("history_edu", "暫收交易", "/suspense", "FUN2.1.2"),
+        ]),
+        new("設定維護",
+        [
+            new("database", "基本資料維護", "/master", "帳號・權限"),
+            new("tune", "銀行格式設定", "/bank-formats", "轉檔格式"),
+        ]),
+    ];
+
+    private string CurrentPath => "/" + Nav.ToBaseRelativePath(Nav.Uri).TrimEnd('/');
+
+    private string PageTitle => CurrentPath switch
+    {
+        var p when p.StartsWith("/balances") => "存摺餘額轉檔",
+        var p when p.StartsWith("/suspense") => "暫收交易作業",
+        var p when p.StartsWith("/master") => "基本資料維護",
+        var p when p.StartsWith("/bank-formats") => "銀行格式設定",
+        _ => "資金管理系統",
+    };
+
+    protected override void OnInitialized()
+    {
+        UserState.EnsureLoaded();
+        UserState.OnChange += HandleUserChanged;
+        Nav.LocationChanged += HandleLocationChanged;
+    }
+
+    private void OnUserSwitched(ChangeEventArgs e)
+    {
+        if (int.TryParse(e.Value?.ToString(), out var id)) UserState.SwitchUser(id);
+    }
+
+    private void HandleUserChanged() => InvokeAsync(StateHasChanged);
+    private void HandleLocationChanged(object? sender, Microsoft.AspNetCore.Components.Routing.LocationChangedEventArgs e) => InvokeAsync(StateHasChanged);
+
+    public void Dispose()
+    {
+        UserState.OnChange -= HandleUserChanged;
+        Nav.LocationChanged -= HandleLocationChanged;
+    }
+}

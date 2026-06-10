@@ -1,0 +1,20 @@
+@* 浮動通知（右上角；柔和底色＋左側色條＋圖示；顯示與清除由呼叫端控制） *@
+<div class="@($"alert {(Ok ? "alert-success" : "alert-error")} fixed top-20 right-6 z-50 w-[min(30rem,calc(100vw-3rem))] animate-toast-in shadow-lg shadow-slate-900/10")">
+    <span class="@($"w-7 h-7 rounded-full flex items-center justify-center shrink-0 {(Ok ? "bg-[#DCFCE7]" : "bg-[#FEE2E2]")}")">
+        <span class="@($"material-symbols-outlined text-[18px] {(Ok ? "text-[#16A34A]" : "text-[#DC2626]")}")">
+            @(Ok ? "task_alt" : "error")
+        </span>
+    </span>
+    <span class="flex-1 leading-relaxed break-all self-center">@Text</span>
+    <button @onclick="OnClose" class="text-[#9CA3AF] hover:text-[#4B5563] transition-colors shrink-0 self-start mt-0.5">
+        <span class="material-symbols-outlined text-[18px]">close</span>
+    </button>
+</div>
+
+@code {
+    [Parameter] public string Type { get; set; } = "success"; // success | error
+    [Parameter] public string Text { get; set; } = "";
+    [Parameter] public EventCallback OnClose { get; set; }
+
+    private bool Ok => Type == "success";
+}

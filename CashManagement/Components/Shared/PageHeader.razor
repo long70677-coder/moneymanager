@@ -1,0 +1,21 @@
+@* 頁面標題區：麵包屑＋大標＋說明 *@
+<div>
+    <p class="text-xs text-[#7a7d85] mb-1.5 flex items-center gap-1">
+        <span>@Group</span>
+        <span class="material-symbols-outlined text-[14px]">chevron_right</span>
+        <span class="text-[#2563EB] font-medium">@Title</span>
+    </p>
+    <h2 class="text-[26px] font-bold text-[#0f172a] tracking-tight">@Title</h2>
+    @if (!string.IsNullOrEmpty(Description))
+    {
+        <p class="text-sm text-[#64748b] mt-1.5 max-w-3xl leading-relaxed">@Description</p>
+    }
+    @ChildContent
+</div>
+
+@code {
+    [Parameter] public string Group { get; set; } = "";
+    [Parameter] public string Title { get; set; } = "";
+    [Parameter] public string? Description { get; set; }
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+}

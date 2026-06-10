@@ -1,0 +1,29 @@
+@* 置中對話框（淡入＋上浮進場） *@
+<div class="fixed inset-0 z-50 flex items-center justify-center p-6">
+    <div class="absolute inset-0 bg-[#111827]/45 backdrop-blur-[2px]" @onclick="OnClose"></div>
+    <div class="relative bg-white rounded-xl shadow-[0_20px_25px_-5px_rgba(17,24,39,0.12),0_8px_10px_-6px_rgba(17,24,39,0.08)] w-full max-w-3xl max-h-[82vh] flex flex-col animate-modal-in overflow-hidden">
+        <div class="px-5 py-4 flex items-center gap-3 border-b border-[#F3F4F6] shrink-0">
+            <span class="w-8 h-8 rounded-lg bg-[#EFF6FF] text-[#2563EB] flex items-center justify-center">
+                <span class="material-symbols-outlined text-[18px]">@Icon</span>
+            </span>
+            <h3 class="text-sm font-semibold text-[#111827]">@Title</h3>
+            <button @onclick="OnClose"
+                    class="ml-auto w-8 h-8 rounded-lg flex items-center justify-center text-[#9CA3AF] hover:text-[#4B5563] hover:bg-[#F3F4F6] transition-colors">
+                <span class="material-symbols-outlined text-[20px]">close</span>
+            </button>
+        </div>
+        <div class="overflow-y-auto flex-1">@ChildContent</div>
+        @if (Footer != null)
+        {
+            <div class="px-5 py-3.5 border-t border-[#F3F4F6] flex justify-end gap-2 shrink-0 bg-[#FAFBFC]">@Footer</div>
+        }
+    </div>
+</div>
+
+@code {
+    [Parameter] public string Icon { get; set; } = "info";
+    [Parameter] public RenderFragment? Title { get; set; }
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+    [Parameter] public RenderFragment? Footer { get; set; }
+    [Parameter] public EventCallback OnClose { get; set; }
+}

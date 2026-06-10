@@ -1,3 +1,9 @@
 node_modules/
 package.json
 package-lock.json
+
+# .NET / Blazor
+CashManagement/bin/
+CashManagement/obj/
+CashManagement/App_Data/
+

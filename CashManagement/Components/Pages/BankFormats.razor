@@ -1,0 +1,352 @@
+@page "/bank-formats"
+@using System.Text.Json
+@inject BankFormatService FormatService
+@inject IJSRuntime JS
+
+<PageTitle>銀行格式設定 - 銀行存款資金管理系統</PageTitle>
+
+<PageHeader Group="設定維護" Title="銀行格式設定"
+            Description="設定各銀行餘額檔的解析方式（鍵＝銀行＋幣別，幣別可用 ZZZ 表共用）。新增銀行或調整格式於此維護，不需改程式。" />
+
+@if (msg != null)
+{
+    <Toast Type="@msg.Value.Type" Text="@msg.Value.Text" OnClose="() => msg = null" />
+}
+
+@* 編輯表單 *@
+<section class="app-card overflow-hidden">
+    <div class="px-5 py-4 flex items-center gap-3 border-b border-[#eef0f4]">
+        <span class="w-8 h-8 rounded-lg bg-[#eff4ff] text-[#2563EB] flex items-center justify-center shrink-0">
+            <span class="material-symbols-outlined text-[18px]">@(editId.HasValue ? "edit" : "add_circle")</span>
+        </span>
+        <h3 class="text-sm font-semibold text-[#0f172a]">@(editId.HasValue ? $"編輯設定 #{editId}" : "新增格式設定")</h3>
+        @if (editId.HasValue)
+        {
+            <span class="ml-auto text-xs text-[#b45309] bg-[#fffbeb] border border-[#fde68a] px-2.5 py-1 rounded-full">編輯模式</span>
+        }
+    </div>
+    <div class="p-5 flex flex-col gap-5">
+        <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <div class="flex flex-col gap-1.5">
+                <label class="text-xs font-medium text-[#44474e]">銀行代碼</label>
+                <input @bind="form.BankCode" class="@Inp" placeholder="例：012" />
+            </div>
+            <div class="flex flex-col gap-1.5">
+                <label class="text-xs font-medium text-[#44474e]">幣別 (或 ZZZ)</label>
+                <input @bind="form.Currency" class="@Inp" placeholder="NTD / ZZZ" />
+            </div>
+            <div class="flex flex-col gap-1.5">
+                <label class="text-xs font-medium text-[#44474e]">設定名稱</label>
+                <input @bind="form.ProfileName" class="@Inp" placeholder="例：第一銀行 台幣" />
+            </div>
+            <div class="flex flex-col gap-1.5">
+                <label class="text-xs font-medium text-[#44474e]">狀態</label>
+                <select @bind="form.Status" class="@Inp">
+                    <option value="ACTIVE">啟用</option>
+                    <option value="DRAFT">草稿</option>
+                    <option value="RETIRED">停用</option>
+                </select>
+            </div>
+            <div class="flex flex-col gap-1.5">
+                <label class="text-xs font-medium text-[#44474e]">解析引擎</label>
+                <select @bind="form.Engine" class="@Inp">
+                    <option value="DELIMITED">分隔檔</option>
+                    <option value="FIXED_WIDTH">固定寬度（未支援）</option>
+                    <option value="EXCEL">Excel（未支援）</option>
+                </select>
+            </div>
+            <div class="flex flex-col gap-1.5">
+                <label class="text-xs font-medium text-[#44474e]">編碼</label>
+                <select @bind="form.Encoding" class="@Inp">
+                    <option value="UTF-8">UTF-8</option>
+                    <option value="BIG5">BIG5（未支援）</option>
+                </select>
+            </div>
+            <div class="flex flex-col gap-1.5">
+                <label class="text-xs font-medium text-[#44474e]">分隔符</label>
+                <input @bind="form.Delimiter" class="@Inp" />
+            </div>
+            <div class="flex flex-col gap-1.5">
+                <label class="text-xs font-medium text-[#44474e]">略過表頭行數</label>
+                <input type="number" @bind="form.SkipRows" class="@Inp" />
+            </div>
+            <div class="flex flex-col gap-1.5">
+                <label class="text-xs font-medium text-[#44474e]">日期格式</label>
+                <input @bind="form.DateFormat" class="@Inp" placeholder="YYYY-MM-DD 或 YYY/MM/DD(民國)" />
+            </div>
+        </div>
+
+        <div class="border border-[#e6e8ef] rounded-xl p-4 bg-[#fafbfd]">
+            <p class="text-xs font-semibold text-[#475569] mb-3 flex items-center gap-1.5">
+                <span class="material-symbols-outlined text-[16px] text-[#2563EB]">swap_horiz</span>
+                欄位對應（以欄名或欄序對應到目標欄位）
+            </p>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                @foreach (var field in cmFields)
+                {
+                    var cm = form.Cm[field.Key];
+                    <div class="flex items-center gap-2 bg-white border border-[#e6e8ef] rounded-lg px-3 py-2">
+                        <span class="w-20 text-xs font-medium text-[#475569] shrink-0">@field.Label</span>
+                        <select @bind="cm.By" class="form-input h-8 w-auto px-2 text-xs">
+                            <option value="name">欄名</option>
+                            <option value="index">欄序</option>
+                        </select>
+                        <input @bind="cm.Key" class="form-input h-8 flex-1 px-2 min-w-0"
+                               placeholder="@(cm.By == "index" ? "0,1,2…" : "欄位名稱")" />
+                    </div>
+                }
+            </div>
+        </div>
+
+        <div class="flex gap-2 pt-4 border-t border-[#eef0f4]">
+            <button @onclick="Submit" class="btn btn-primary px-6">
+                <span class="material-symbols-outlined text-[18px]">@(editId.HasValue ? "save" : "add")</span>
+                @(editId.HasValue ? "儲存修改" : "新增")
+            </button>
+            @if (editId.HasValue)
+            {
+                <button @onclick="ResetForm" class="btn btn-outline">
+                    <span class="material-symbols-outlined text-[18px]">close</span>取消編輯
+                </button>
+            }
+        </div>
+    </div>
+</section>
+
+@* 清單 *@
+<section class="app-card overflow-hidden">
+    <div class="px-5 py-4 flex items-center gap-3 border-b border-[#eef0f4]">
+        <span class="w-8 h-8 rounded-lg bg-[#eff4ff] text-[#2563EB] flex items-center justify-center shrink-0">
+            <span class="material-symbols-outlined text-[18px]">tune</span>
+        </span>
+        <h3 class="text-sm font-semibold text-[#0f172a]">已設定格式</h3>
+        <span class="ml-auto text-xs text-[#7a7d85] bg-[#f1f5f9] px-2.5 py-1 rounded-full">共 @profiles.Count 筆</span>
+    </div>
+    @if (profiles.Count == 0)
+    {
+        <EmptyState Icon="tune" Title="尚無格式設定" Hint="於上方表單新增第一筆銀行格式設定。" />
+    }
+    else
+    {
+        <div class="overflow-x-auto">
+            <table class="w-full text-left border-collapse min-w-max">
+                <thead class="bg-[#f8fafc] border-b border-[#e6e8ef] text-xs font-semibold text-[#475569]">
+                    <tr>
+                        <th class="px-4 py-3">銀行</th>
+                        <th class="px-4 py-3">幣別</th>
+                        <th class="px-4 py-3">名稱</th>
+                        <th class="px-4 py-3">引擎</th>
+                        <th class="px-4 py-3">編碼／分隔</th>
+                        <th class="px-4 py-3">日期格式</th>
+                        <th class="px-4 py-3">狀態</th>
+                        <th class="px-4 py-3 text-right">操作</th>
+                    </tr>
+                </thead>
+                <tbody class="text-sm divide-y divide-[#eef0f4]">
+                    @foreach (var p in profiles)
+                    {
+                        <tr class="@($"hover:bg-[#f8f9fc] transition-colors {(editId == p.Id ? "bg-[#eff6ff]" : "")}")">
+                            <td class="px-4 py-2.5"><span class="px-2 py-0.5 bg-[#f1f5f9] text-[#475569] rounded-md text-xs font-mono font-medium">@p.BankCode</span></td>
+                            <td class="px-4 py-2.5">
+                                @if (p.Currency == "ZZZ")
+                                {
+                                    <span class="px-2 py-0.5 bg-[#fef3c7] text-[#b45309] rounded-full text-xs">ZZZ 共用</span>
+                                }
+                                else
+                                {
+                                    <span class="font-medium">@p.Currency</span>
+                                }
+                            </td>
+                            <td class="px-4 py-2.5 text-[#44474e]">@p.ProfileName</td>
+                            <td class="px-4 py-2.5"><span class="px-2 py-0.5 bg-[#eef2ff] text-[#4338ca] rounded-full text-xs">@p.Engine</span></td>
+                            <td class="px-4 py-2.5 text-[#44474e] text-xs">@p.Encoding／@(p.Delimiter == "," ? "逗號" : p.Delimiter)</td>
+                            <td class="px-4 py-2.5 font-mono tabular-nums text-xs">@p.DateFormat</td>
+                            <td class="px-4 py-2.5">
+                                <span class="@($"px-2 py-0.5 rounded-full text-xs {StatusCls(p.Status)}")">@StatusLabel(p.Status)</span>
+                            </td>
+                            <td class="px-4 py-2.5 text-right whitespace-nowrap">
+                                <button @onclick="() => Edit(p)" class="inline-flex items-center gap-0.5 text-[#2563EB] hover:bg-[#eff6ff] rounded-md px-2 py-1 text-xs transition-colors mr-1">
+                                    <span class="material-symbols-outlined text-[15px]">edit</span>編輯
+                                </button>
+                                <button @onclick="() => Delete(p.Id)" class="inline-flex items-center gap-0.5 text-[#b91c1c] hover:bg-[#fef2f2] rounded-md px-2 py-1 text-xs transition-colors">
+                                    <span class="material-symbols-outlined text-[15px]">delete</span>刪除
+                                </button>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+</section>
+
+@code {
+    private const string Inp = "form-input";
+
+    private List<BankFormatProfile> profiles = [];
+    private (string Type, string Text)? msg;
+    private int? editId;
+
+    private class ColRefForm
+    {
+        public string By { get; set; } = "name";
+        public string Key { get; set; } = "";
+    }
+
+    private class FormModel
+    {
+        public string BankCode { get; set; } = "";
+        public string Currency { get; set; } = "";
+        public string ProfileName { get; set; } = "";
+        public string Engine { get; set; } = "DELIMITED";
+        public string Encoding { get; set; } = "UTF-8";
+        public string Delimiter { get; set; } = ",";
+        public int SkipRows { get; set; }
+        public string DateFormat { get; set; } = "YYYY-MM-DD";
+        public string Status { get; set; } = "ACTIVE";
+        public Dictionary<string, ColRefForm> Cm { get; set; } = NewCm();
+
+        public static Dictionary<string, ColRefForm> NewCm() => new()
+        {
+            ["balanceDate"] = new ColRefForm { Key = "餘額日期" },
+            ["accountCode"] = new ColRefForm { Key = "帳號" },
+            ["currency"] = new ColRefForm { Key = "幣別" },
+            ["balance"] = new ColRefForm { Key = "餘額" },
+        };
+    }
+
+    private FormModel form = new();
+
+    private readonly (string Key, string Label)[] cmFields =
+    [
+        ("balanceDate", "餘額日期*"), ("accountCode", "帳號"), ("currency", "幣別"), ("balance", "餘額*"),
+    ];
+
+    protected override void OnInitialized() => Load();
+
+    private void Load() => profiles = FormatService.List();
+
+    private void Show(string type, string text)
+    {
+        msg = (type, text);
+        _ = AutoDismiss();
+    }
+
+    private async Task AutoDismiss()
+    {
+        var current = msg;
+        await Task.Delay(5000);
+        if (msg == current)
+        {
+            msg = null;
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private void Edit(BankFormatProfile p)
+    {
+        editId = p.Id;
+        var cm = FormModel.NewCm();
+        try
+        {
+            using var doc = JsonDocument.Parse(p.ColumnMapJson);
+            foreach (var field in cmFields)
+            {
+                if (doc.RootElement.TryGetProperty(field.Key, out var el))
+                {
+                    cm[field.Key] = new ColRefForm
+                    {
+                        By = el.TryGetProperty("by", out var by) ? by.GetString() ?? "name" : "name",
+                        Key = el.TryGetProperty("key", out var key) ? key.ToString() : "",
+                    };
+                }
+            }
+        }
+        catch (JsonException) { /* 壞 JSON 以預設值呈現 */ }
+
+        form = new FormModel
+        {
+            BankCode = p.BankCode, Currency = p.Currency, ProfileName = p.ProfileName ?? "",
+            Engine = p.Engine, Encoding = p.Encoding, Delimiter = p.Delimiter,
+            SkipRows = p.SkipRows, DateFormat = p.DateFormat ?? "YYYY-MM-DD", Status = p.Status,
+            Cm = cm,
+        };
+    }
+
+    private void ResetForm()
+    {
+        editId = null;
+        form = new FormModel();
+    }
+
+    private void Submit()
+    {
+        try
+        {
+            if (string.IsNullOrWhiteSpace(form.Cm["balanceDate"].Key) || string.IsNullOrWhiteSpace(form.Cm["balance"].Key))
+                throw new BusinessException("欄位對應至少需設定「餘額日期」與「餘額」");
+
+            var columnMapJson = JsonSerializer.Serialize(form.Cm.ToDictionary(
+                kv => kv.Key,
+                kv => new Dictionary<string, object>
+                {
+                    ["by"] = kv.Value.By,
+                    ["key"] = kv.Value.By == "index" && int.TryParse(kv.Value.Key, out var n) ? n : kv.Value.Key,
+                }));
+
+            var p = new BankFormatProfile
+            {
+                Id = editId ?? 0,
+                BankCode = form.BankCode, Currency = form.Currency, ProfileName = form.ProfileName,
+                Engine = form.Engine, Encoding = form.Encoding, Delimiter = form.Delimiter,
+                HasHeader = true, SkipRows = form.SkipRows, ColumnMapJson = columnMapJson,
+                DateFormat = form.DateFormat, Status = form.Status, UpdatedBy = "User",
+            };
+
+            if (editId.HasValue)
+            {
+                FormatService.Update(p);
+                Show("success", "已更新格式設定");
+            }
+            else
+            {
+                FormatService.Create(p);
+                Show("success", $"已新增格式設定（{p.BankCode}／{p.Currency}）");
+            }
+            ResetForm();
+            Load();
+        }
+        catch (BusinessException e)
+        {
+            Show("error", e.Message);
+        }
+    }
+
+    private async Task Delete(int id)
+    {
+        if (!await JS.InvokeAsync<bool>("confirm", "確定刪除此格式設定？")) return;
+        try
+        {
+            FormatService.Delete(id);
+            Show("success", "已刪除格式設定");
+            if (editId == id) ResetForm();
+            Load();
+        }
+        catch (BusinessException e)
+        {
+            Show("error", e.Message);
+        }
+    }
+
+    private static string StatusLabel(string s) => s switch
+    {
+        "ACTIVE" => "啟用", "DRAFT" => "草稿", "RETIRED" => "停用", _ => s,
+    };
+
+    private static string StatusCls(string s) => s switch
+    {
+        "ACTIVE" => "bg-[#DCFCE7] text-[#166534]",
+        "DRAFT" => "bg-[#fef3c7] text-[#b45309]",
+        _ => "bg-[#eef0f4] text-[#7a7d85]",
+    };
+}

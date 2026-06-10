@@ -1,0 +1,408 @@
+@page "/balances"
+@inject BalanceService BalanceSvc
+@inject IngestService Ingest
+@inject CurrentUserState UserState
+@implements IDisposable
+
+<PageTitle>存摺餘額轉檔 - 銀行存款資金管理系統</PageTitle>
+
+<PageHeader Group="日常作業" Title="存摺餘額轉檔"
+            Description="匯入銀行存摺餘額（一檔一帳號，依檔名對應帳號），與系統帳列餘額並陳比對，人工調整與全批覆核後供立暫收。" />
+
+@if (msg != null)
+{
+    <Toast Type="@msg.Value.Type" Text="@msg.Value.Text" OnClose="() => msg = null" />
+}
+
+@* 條件 + 轉檔區 *@
+<section class="app-card p-5 flex flex-col gap-4">
+    <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <div class="flex flex-col gap-1.5">
+            <label class="text-xs font-medium text-[#44474e]">餘額日期</label>
+            <input type="date" @bind="balanceDate" @bind:format="yyyy-MM-dd" class="form-input" />
+        </div>
+        <div class="flex flex-col gap-1.5">
+            <label class="text-xs font-medium text-[#44474e]">幣別</label>
+            <select @bind="currency" class="form-input">
+                <option value="NTD">新台幣 (NTD)</option>
+                <option value="USD">美元 (USD)</option>
+                <option value="EUR">歐元 (EUR)</option>
+                <option value="JPY">日圓 (JPY)</option>
+            </select>
+        </div>
+        <div class="flex flex-col gap-1.5 md:col-span-2">
+            <label class="text-xs font-medium text-[#44474e]">餘額檔案（可多選，一檔一帳號）</label>
+            <label class="h-10 flex items-center gap-2 px-3 border border-dashed border-[#b9c0cf] rounded-lg cursor-pointer hover:border-[#2563EB] hover:bg-[#f8faff] transition text-sm">
+                <span class="material-symbols-outlined text-[18px] text-[#2563EB]">upload_file</span>
+                @if (pickedFiles.Count == 0)
+                {
+                    <span class="text-[#94a3b8]">點選選擇檔案…</span>
+                }
+                else
+                {
+                    <span class="text-[#1e293b] truncate">已選 @pickedFiles.Count 檔：@string.Join("、", pickedFiles.Select(f => f.Name))</span>
+                }
+                <InputFile OnChange="OnFilesPicked" multiple class="hidden" />
+            </label>
+        </div>
+    </div>
+    <div class="flex flex-wrap items-center gap-2.5 pt-3 border-t border-[#eef0f4]">
+        <button @onclick="Query" disabled="@loading" class="@($"{BtnPrimary} px-6")">
+            <span class="material-symbols-outlined text-[18px]">search</span>查詢
+        </button>
+        <button @onclick="Upload" disabled="@loading" class="@BtnSecondary">
+            <span class="material-symbols-outlined text-[18px]">upload_file</span>轉檔
+        </button>
+        <button @onclick="Preview" disabled="@loading" class="@BtnSecondary">
+            <span class="material-symbols-outlined text-[18px]">preview</span>試轉預覽
+        </button>
+        <label class="flex items-center gap-1.5 text-sm text-[#44474e] ml-1 cursor-pointer select-none">
+            <input type="checkbox" @bind="secondImport" class="w-4 h-4 accent-[#2563EB]" />
+            二次轉入（保留前筆）
+        </label>
+    </div>
+</section>
+
+@* 統計卡 *@
+@if (queried && rows.Count > 0)
+{
+    <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <StatCard Icon="account_balance_wallet" Label="可維護帳號" Value="@rows.Count.ToString()" />
+        <StatCard Icon="download_done" Label="已轉入" Value="@ImportedCount.ToString()" Tone="blue" />
+        <StatCard Icon="difference" Label="差額不為 0" Value="@DiffCount.ToString()" Tone="@(DiffCount > 0 ? "red" : "default")" />
+        <StatCard Icon="pending_actions" Label="未覆核" Value="@UnreviewedCount.ToString()" Tone="@(UnreviewedCount > 0 ? "amber" : "green")" />
+    </div>
+}
+
+@* 餘額明細 *@
+<section class="app-card overflow-hidden">
+    <div class="px-5 py-4 flex items-center gap-3 border-b border-[#eef0f4]">
+        <span class="w-8 h-8 rounded-lg bg-[#eff4ff] text-[#2563EB] flex items-center justify-center shrink-0">
+            <span class="material-symbols-outlined text-[18px]">savings</span>
+        </span>
+        <h3 class="text-sm font-semibold text-[#0f172a]">
+            存摺餘額明細<span class="ml-2 font-normal text-[#7a7d85]">@balanceDate.ToString("yyyy-MM-dd")・@currency</span>
+        </h3>
+        <div class="ml-auto flex items-center gap-2">
+            <button @onclick="Review" disabled="@(loading || rows.Count == 0)" class="@BtnSecondarySm">
+                <span class="material-symbols-outlined text-[18px]">verified</span>全批覆核
+            </button>
+            <button @onclick="Save" disabled="@(loading || rows.Count == 0)" class="@BtnSecondarySm">
+                <span class="material-symbols-outlined text-[18px]">save</span>儲存
+            </button>
+        </div>
+    </div>
+    @if (rows.Count == 0)
+    {
+        <EmptyState Icon="manage_search"
+                    Title="@(queried ? "查無可維護帳號" : "請設定條件後按「查詢」")"
+                    Hint="@(queried ? "此日期／幣別下沒有您可維護的暫收帳戶。" : "查詢後將並列顯示系統帳列餘額與銀行存摺轉入餘額，並計算差額。")" />
+    }
+    else
+    {
+        <div class="overflow-x-auto">
+            <table class="w-full text-left border-collapse min-w-max">
+                <thead class="bg-[#f8fafc] border-b border-[#e6e8ef] text-xs font-semibold text-[#475569]">
+                    <tr>
+                        <th class="px-4 py-3">帳號</th>
+                        <th class="px-4 py-3">用途</th>
+                        <th class="px-4 py-3 text-right">系統帳列餘額<br /><span class="font-normal text-[#9aa0ad]">(唯讀)</span></th>
+                        <th class="px-4 py-3 text-center w-10">編輯</th>
+                        <th class="px-4 py-3 text-right">銀行存摺轉入餘額<br /><span class="font-normal text-[#9aa0ad]">(勾選可改)</span></th>
+                        <th class="px-4 py-3 text-right">差額</th>
+                        <th class="px-4 py-3">資料來源</th>
+                        <th class="px-4 py-3 text-center">覆核</th>
+                    </tr>
+                </thead>
+                <tbody class="text-sm divide-y divide-[#eef0f4]">
+                    @foreach (var r in rows)
+                    {
+                        var isChecked = checkedRows.Contains(r.AccountCode);
+                        <tr class="hover:bg-[#f8f9fc] transition-colors">
+                            <td class="px-4 py-2.5 font-medium text-[#0f172a]">@r.AccountCode</td>
+                            <td class="px-4 py-2.5 text-[#44474e]">@r.AccountPurpose</td>
+                            <td class="px-4 py-2.5 text-right font-mono tabular-nums text-[#44474e]">@Fmt(r.LedgerBalance)</td>
+                            <td class="px-4 py-2.5 text-center">
+                                <input type="checkbox" checked="@isChecked" @onchange="e => ToggleCheck(r, (bool)e.Value!)"
+                                       class="w-4 h-4 accent-[#2563EB]" />
+                            </td>
+                            <td class="px-4 py-2.5 text-right">
+                                @if (isChecked)
+                                {
+                                    <input value="@GetEdit(r.AccountCode)" @onchange="e => edits[r.AccountCode] = e.Value?.ToString() ?? string.Empty"
+                                           class="w-32 text-right font-mono tabular-nums border border-[#2563EB] rounded-lg px-2 py-1 outline-none ring-2 ring-[#2563EB]/15" />
+                                }
+                                else
+                                {
+                                    <span class="font-mono tabular-nums">@Fmt(r.PassbookBalance)</span>
+                                }
+                            </td>
+                            <td class="@($"px-4 py-2.5 text-right font-mono tabular-nums {(r.Diff is not null and not 0 ? "text-[#b91c1c] font-semibold" : "text-[#44474e]")}")">@Fmt(r.Diff)</td>
+                            <td class="px-4 py-2.5">
+                                @if (r.DataType != null)
+                                {
+                                    <span class="px-2 py-0.5 bg-[#eef2ff] text-[#4338ca] rounded-full text-xs border border-[#e0e7ff]">
+                                        @BalanceDataTypes.Labels.GetValueOrDefault(r.DataType, r.DataType)@(r.ImportSeq > 1 ? $"(次{r.ImportSeq})" : "")
+                                    </span>
+                                }
+                                else
+                                {
+                                    <span class="text-[#9aa0ad] text-xs">未轉入</span>
+                                }
+                            </td>
+                            <td class="px-4 py-2.5 text-center">
+                                @if (r.PassbookBalance == null)
+                                {
+                                    <span class="text-[#9aa0ad]">—</span>
+                                }
+                                else if (r.IsReviewed)
+                                {
+                                    <span class="text-[#15803d] text-xs inline-flex items-center gap-0.5"><span class="material-symbols-outlined text-[16px]">check_circle</span>已覆核</span>
+                                }
+                                else
+                                {
+                                    <span class="text-[#b45309] text-xs inline-flex items-center gap-0.5"><span class="material-symbols-outlined text-[16px]">schedule</span>未覆核</span>
+                                }
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+</section>
+
+@* 試轉預覽彈窗 *@
+@if (preview != null)
+{
+    <Modal Icon="preview" OnClose="() => preview = null">
+        <Title>試轉預覽<span class="ml-2 font-normal text-[#7a7d85]">@preview.FileName・帳號 @preview.AccountCode</span></Title>
+        <ChildContent>
+            <div class="p-5 flex flex-col gap-4">
+                <div class="flex gap-3">
+                    <span class="px-2.5 py-1 bg-[#DCFCE7] text-[#166534] rounded-full text-xs font-medium">解析成功 @preview.Records.Count 列</span>
+                    @if (preview.Errors.Count > 0)
+                    {
+                        <span class="px-2.5 py-1 bg-[#FEE2E2] text-[#991B1B] rounded-full text-xs font-medium">錯誤 @preview.Errors.Count 列</span>
+                    }
+                </div>
+                @if (preview.Records.Count > 0)
+                {
+                    <div class="border border-[#e6e8ef] rounded-xl overflow-hidden">
+                        <table class="w-full text-left border-collapse">
+                            <thead class="bg-[#f8fafc] border-b border-[#e6e8ef] text-xs font-semibold text-[#475569]">
+                                <tr>
+                                    <th class="px-4 py-2.5">列</th>
+                                    <th class="px-4 py-2.5">餘額日期</th>
+                                    <th class="px-4 py-2.5">帳號</th>
+                                    <th class="px-4 py-2.5">幣別</th>
+                                    <th class="px-4 py-2.5 text-right">餘額</th>
+                                </tr>
+                            </thead>
+                            <tbody class="text-sm divide-y divide-[#eef0f4]">
+                                @foreach (var r in preview.Records.Take(50))
+                                {
+                                    <tr>
+                                        <td class="px-4 py-2 text-[#7a7d85] text-xs">@r.SourceRow</td>
+                                        <td class="px-4 py-2 font-mono tabular-nums">@r.BalanceDate</td>
+                                        <td class="px-4 py-2 font-medium">@(r.AccountCode.Length > 0 ? r.AccountCode : preview.AccountCode)</td>
+                                        <td class="px-4 py-2">@r.Currency</td>
+                                        <td class="px-4 py-2 text-right font-mono tabular-nums">@r.Balance.ToString("N0")</td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                }
+                @if (preview.Errors.Count > 0)
+                {
+                    <div class="border border-[#fecaca] bg-[#fef2f2] rounded-xl p-4 flex flex-col gap-1.5">
+                        <p class="text-xs font-semibold text-[#991B1B] flex items-center gap-1">
+                            <span class="material-symbols-outlined text-[16px]">error</span>錯誤列
+                        </p>
+                        @foreach (var e in preview.Errors)
+                        {
+                            <p class="text-sm text-[#991B1B]">第 @e.SourceRow 列：@e.Message</p>
+                        }
+                    </div>
+                }
+            </div>
+        </ChildContent>
+        <Footer>
+            <span class="mr-auto text-xs text-[#7a7d85] self-center">僅解析檢核，未寫入資料庫</span>
+            <button @onclick="() => preview = null" class="@BtnSecondarySm">關閉</button>
+        </Footer>
+    </Modal>
+}
+
+@code {
+    private const string BtnPrimary = "btn btn-primary";
+    private const string BtnSecondary = "btn btn-secondary";
+    private const string BtnSecondarySm = "btn btn-secondary btn-sm";
+
+    private DateTime balanceDate = new(2023, 10, 26);
+    private string currency = "NTD";
+    private bool secondImport;
+    private bool loading;
+    private bool queried;
+    private List<BalanceRow> rows = [];
+    private readonly HashSet<string> checkedRows = [];
+    private readonly Dictionary<string, string> edits = [];
+    private (string Type, string Text)? msg;
+    private List<IBrowserFile> pickedFiles = [];
+    private PreviewResult? preview;
+
+    private string DateStr => balanceDate.ToString("yyyy-MM-dd");
+    private int ImportedCount => rows.Count(r => r.PassbookBalance != null);
+    private int DiffCount => rows.Count(r => r.Diff is not null and not 0);
+    private int UnreviewedCount => rows.Count(r => r.PassbookBalance != null && !r.IsReviewed);
+
+    protected override void OnInitialized() => UserState.OnChange += HandleUserChanged;
+
+    private void HandleUserChanged()
+    {
+        rows = [];
+        queried = false;
+        checkedRows.Clear();
+        edits.Clear();
+        InvokeAsync(StateHasChanged);
+    }
+
+    public void Dispose() => UserState.OnChange -= HandleUserChanged;
+
+    private void Show(string type, string text)
+    {
+        msg = (type, text);
+        _ = AutoDismiss();
+    }
+
+    private async Task AutoDismiss()
+    {
+        var current = msg;
+        await Task.Delay(6000);
+        if (msg == current)
+        {
+            msg = null;
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private void OnFilesPicked(InputFileChangeEventArgs e) =>
+        pickedFiles = e.GetMultipleFiles(20).ToList();
+
+    private void Query()
+    {
+        try
+        {
+            rows = BalanceSvc.GetRows(DateStr, currency, UserState.CurrentUser?.Id ?? 0);
+            queried = true;
+            checkedRows.Clear();
+            edits.Clear();
+            if (rows.Count == 0) Show("error", "查無可維護帳號");
+        }
+        catch (BusinessException e)
+        {
+            Show("error", e.Message);
+        }
+    }
+
+    private async Task Upload()
+    {
+        if (pickedFiles.Count == 0) { Show("error", "請先選擇檔案"); return; }
+        loading = true;
+        try
+        {
+            var files = new List<(string, byte[])>();
+            foreach (var f in pickedFiles)
+            {
+                using var ms = new MemoryStream();
+                await f.OpenReadStream(10 * 1024 * 1024).CopyToAsync(ms);
+                files.Add((f.Name, ms.ToArray()));
+            }
+            var results = Ingest.IngestFiles(files, DateStr, UserState.CurrentUser?.Id ?? 0, secondImport, UserState.CurrentUser?.UserName ?? "User");
+
+            var totalSuccess = results.Sum(r => r.Success);
+            var totalFail = results.Sum(r => r.Fail);
+            var fails = results.Where(r => r.Status != "SUCCESS").ToList();
+            if (fails.Count == 0)
+                Show("success", $"轉檔完成：{results.Count} 檔、成功 {totalSuccess} 筆");
+            else
+                Show("error", $"轉檔完成但有失敗：成功 {totalSuccess}、失敗 {totalFail}。"
+                    + string.Join("；", fails.Select(f => $"{f.FileName}：{f.Errors.FirstOrDefault()?.Message}")));
+
+            pickedFiles = [];
+            Query();
+        }
+        catch (BusinessException e)
+        {
+            Show("error", e.Message);
+        }
+        finally
+        {
+            loading = false;
+        }
+    }
+
+    private async Task Preview()
+    {
+        if (pickedFiles.Count == 0) { Show("error", "請先選擇檔案（試轉預覽第一個檔）"); return; }
+        loading = true;
+        try
+        {
+            var f = pickedFiles[0];
+            using var ms = new MemoryStream();
+            await f.OpenReadStream(10 * 1024 * 1024).CopyToAsync(ms);
+            var result = Ingest.PreviewFile(f.Name, ms.ToArray());
+            if (result.Error != null) { Show("error", $"試轉：{result.Error}"); return; }
+            preview = result;
+        }
+        finally
+        {
+            loading = false;
+        }
+    }
+
+    private void Save()
+    {
+        var editList = checkedRows
+            .Where(code => edits.ContainsKey(code))
+            .Select(code => (code, decimal.TryParse(edits[code].Replace(",", ""), out var v) ? v : 0m))
+            .ToList();
+        if (editList.Count == 0) { Show("error", "無勾選或未修改的存摺餘額"); return; }
+        try
+        {
+            var saved = BalanceSvc.SaveManualEdits(DateStr, currency, editList, UserState.CurrentUser?.Id ?? 0, UserState.CurrentUser?.UserName ?? "User");
+            Show("success", $"已儲存 {saved} 筆存摺餘額（改為人工輸入）");
+            Query();
+        }
+        catch (BusinessException e)
+        {
+            Show("error", e.Message);
+        }
+    }
+
+    private void Review()
+    {
+        var count = BalanceSvc.ReviewBatch(DateStr, currency, UserState.CurrentUser?.Id ?? 0, UserState.CurrentUser?.UserName ?? "User");
+        Show("success", $"已覆核 {count} 筆存摺餘額");
+        Query();
+    }
+
+    private void ToggleCheck(BalanceRow r, bool on)
+    {
+        if (on)
+        {
+            checkedRows.Add(r.AccountCode);
+            if (!edits.ContainsKey(r.AccountCode))
+                edits[r.AccountCode] = r.PassbookBalance?.ToString("0.##") ?? "";
+        }
+        else
+        {
+            checkedRows.Remove(r.AccountCode);
+        }
+    }
+
+    private string GetEdit(string accountCode) => edits.GetValueOrDefault(accountCode, "");
+
+    private static string Fmt(decimal? n) => n?.ToString("N0") ?? "—";
+}

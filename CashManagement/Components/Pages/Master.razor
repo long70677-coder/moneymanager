@@ -1,0 +1,160 @@
+@page "/master"
+@inject MasterDataService MasterData
+
+<PageTitle>基本資料維護 - 銀行存款資金管理系統</PageTitle>
+
+<PageHeader Group="設定維護" Title="基本資料維護"
+            Description="檢視銀行存款帳號基本資料，以及使用者帳號與帳號維護權限（主辦／代理）。" />
+
+@* 銀行存款帳號基本資料 *@
+<section class="app-card overflow-hidden">
+    <div class="px-5 py-4 flex items-center gap-3 border-b border-[#eef0f4]">
+        <span class="w-8 h-8 rounded-lg bg-[#eff4ff] text-[#2563EB] flex items-center justify-center shrink-0">
+            <span class="material-symbols-outlined text-[18px]">account_balance</span>
+        </span>
+        <h3 class="text-sm font-semibold text-[#0f172a]">銀行存款帳號基本資料</h3>
+        <span class="ml-auto text-xs text-[#7a7d85] bg-[#f1f5f9] px-2.5 py-1 rounded-full">共 @accounts.Count 個帳號</span>
+    </div>
+    @if (loading)
+    {
+        <EmptyState Icon="hourglass_top" Title="載入中…" />
+    }
+    else if (accounts.Count == 0)
+    {
+        <EmptyState Icon="account_balance" Title="無帳號資料" />
+    }
+    else
+    {
+        <div class="overflow-x-auto w-full">
+            <table class="w-full text-left border-collapse min-w-max">
+                <thead class="bg-[#f8fafc] border-b border-[#e6e8ef] text-xs font-semibold text-[#475569]">
+                    <tr>
+                        <th class="px-4 py-3 whitespace-nowrap">帳號短碼</th>
+                        <th class="px-4 py-3 whitespace-nowrap">完整帳號</th>
+                        <th class="px-4 py-3 whitespace-nowrap">銀行代碼</th>
+                        <th class="px-4 py-3 whitespace-nowrap">帳戶名稱</th>
+                        <th class="px-4 py-3 whitespace-nowrap">帳號用途</th>
+                        <th class="px-4 py-3 whitespace-nowrap">轉檔檔名</th>
+                        <th class="px-4 py-3 whitespace-nowrap">幣別屬性</th>
+                        <th class="px-4 py-3 whitespace-nowrap text-center">暫收帳戶</th>
+                        <th class="px-4 py-3 whitespace-nowrap text-center">保單帳戶</th>
+                    </tr>
+                </thead>
+                <tbody class="text-sm divide-y divide-[#eef0f4]">
+                    @foreach (var a in accounts)
+                    {
+                        <tr class="hover:bg-[#f8f9fc] transition-colors">
+                            <td class="px-4 py-2.5 font-medium text-[#0f172a]">@a.AccountCode</td>
+                            <td class="px-4 py-2.5 font-mono tabular-nums text-[#44474e]">@a.AccountLongCode</td>
+                            <td class="px-4 py-2.5"><span class="px-2 py-0.5 bg-[#f1f5f9] text-[#475569] rounded-md text-xs font-mono">@a.BankCode</span></td>
+                            <td class="px-4 py-2.5 text-[#44474e]">@a.AccountName</td>
+                            <td class="px-4 py-2.5 text-[#44474e]">@a.AccountPurpose</td>
+                            <td class="px-4 py-2.5 font-mono text-xs text-[#64748b]">@a.ImportFileName</td>
+                            <td class="px-4 py-2.5">
+                                <span class="@($"px-2 py-0.5 rounded-full text-xs {(a.CurrencyType == "TWD" ? "bg-[#dadff1] text-[#3a4a78]" : "bg-[#e0f2fe] text-[#0369a1]")}")">
+                                    @(a.CurrencyType == "TWD" ? "本國幣 (TWD)" : "外幣")
+                                </span>
+                            </td>
+                            <td class="px-4 py-2.5 text-center">@FlagIcon(a.IsSuspense)</td>
+                            <td class="px-4 py-2.5 text-center">@FlagIcon(a.IsPolicyAccount)</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+</section>
+
+@* 使用者帳號與權限 *@
+<section class="app-card overflow-hidden">
+    <div class="px-5 py-4 flex items-center gap-3 border-b border-[#eef0f4]">
+        <span class="w-8 h-8 rounded-lg bg-[#eff4ff] text-[#2563EB] flex items-center justify-center shrink-0">
+            <span class="material-symbols-outlined text-[18px]">manage_accounts</span>
+        </span>
+        <h3 class="text-sm font-semibold text-[#0f172a]">使用者帳號與帳號維護權限</h3>
+        <span class="ml-auto text-xs text-[#7a7d85] bg-[#f1f5f9] px-2.5 py-1 rounded-full">共 @users.Count 位使用者</span>
+    </div>
+    @if (loading)
+    {
+        <EmptyState Icon="hourglass_top" Title="載入中…" />
+    }
+    else if (users.Count == 0)
+    {
+        <EmptyState Icon="manage_accounts" Title="無使用者資料" />
+    }
+    else
+    {
+        <div class="overflow-x-auto w-full">
+            <table class="w-full text-left border-collapse min-w-max">
+                <thead class="bg-[#f8fafc] border-b border-[#e6e8ef] text-xs font-semibold text-[#475569]">
+                    <tr>
+                        <th class="px-4 py-3 whitespace-nowrap">使用者代碼</th>
+                        <th class="px-4 py-3 whitespace-nowrap">姓名</th>
+                        <th class="px-4 py-3 whitespace-nowrap">角色</th>
+                        <th class="px-4 py-3">可維護帳號（主辦／代理）</th>
+                    </tr>
+                </thead>
+                <tbody class="text-sm divide-y divide-[#eef0f4]">
+                    @foreach (var u in users)
+                    {
+                        <tr class="hover:bg-[#f8f9fc] transition-colors align-top">
+                            <td class="px-4 py-3 font-medium text-[#0f172a]">@u.User.UserCode</td>
+                            <td class="px-4 py-3 text-[#44474e]">@u.User.UserName</td>
+                            <td class="px-4 py-3">
+                                <span class="@($"px-2.5 py-0.5 rounded-full text-xs font-medium {(u.User.Role == "MANAGER" ? "bg-[#ede9fe] text-[#6d28d9]" : "bg-[#dbeafe] text-[#1d4ed8]")}")">
+                                    @(Roles.Labels.GetValueOrDefault(u.User.Role, u.User.Role))
+                                </span>
+                            </td>
+                            <td class="px-4 py-3">
+                                @if (u.User.Role == "MANAGER")
+                                {
+                                    <span class="inline-flex items-center gap-1 text-[#6d28d9] text-xs bg-[#f5f3ff] px-2 py-0.5 rounded-md border border-[#ede9fe]">
+                                        <span class="material-symbols-outlined text-[14px]">visibility</span>全部帳號（不限）
+                                    </span>
+                                }
+                                else if (u.Accounts.Count == 0)
+                                {
+                                    <span class="text-[#9aa0ad] text-xs">未指派帳號</span>
+                                }
+                                else
+                                {
+                                    <div class="flex flex-wrap gap-1.5">
+                                        @foreach (var m in u.Accounts)
+                                        {
+                                            <span class="@($"inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs border {(m.ManagerType == "PRIMARY" ? "bg-[#f0fdf4] text-[#166534] border-[#bbf7d0]" : "bg-[#fffbeb] text-[#b45309] border-[#fde68a]")}")"
+                                                  title="@m.AccountName">
+                                                <span class="font-medium">@m.AccountCode</span>
+                                                <span class="opacity-70">@(m.ManagerType == "PRIMARY" ? "主辦" : "代理")</span>
+                                                @if (m.ManagerType == "AGENT" && (m.ValidFrom != null || m.ValidTo != null))
+                                                {
+                                                    <span class="opacity-70">（@(m.ValidFrom ?? "—")~@(m.ValidTo ?? "—")）</span>
+                                                }
+                                            </span>
+                                        }
+                                    </div>
+                                }
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+</section>
+
+@code {
+    private List<BankAccount> accounts = [];
+    private List<UserWithAccounts> users = [];
+    private bool loading = true;
+
+    protected override void OnInitialized()
+    {
+        accounts = MasterData.GetAccounts();
+        users = MasterData.GetUsersWithAccounts();
+        loading = false;
+    }
+
+    private static RenderFragment FlagIcon(bool on) => on
+        ? @<span class="material-symbols-outlined text-[18px] text-[#15803d]">check_circle</span>
+        : @<span class="text-[#cbd5e1]">—</span>;
+}

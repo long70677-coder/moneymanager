@@ -1,0 +1,474 @@
+@page "/suspense"
+@inject SuspenseService SuspenseSvc
+@inject CurrentUserState UserState
+@inject IJSRuntime JS
+@implements IDisposable
+
+<PageTitle>暫收交易 - 銀行存款資金管理系統</PageTitle>
+
+<PageHeader Group="日常作業" Title="暫收交易作業"
+            Description="依銀行存摺餘額與公司帳列餘額之差額辦理立暫收，並進行批號確認與傳票產生。">
+    @if (UserState.CurrentUser != null)
+    {
+        var isMgr = UserState.CurrentUser.Role == "MANAGER";
+        <div class="@($"mt-2.5 inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium {(isMgr ? "bg-[#ede9fe] text-[#6d28d9]" : "bg-[#dbeafe] text-[#1d4ed8]")}")">
+            <span class="material-symbols-outlined text-[14px]">@(isMgr ? "visibility" : "person")</span>
+            @(isMgr
+                ? $"{UserState.CurrentUser.UserName}（主管）：可檢視與操作所有帳號及批號"
+                : $"{UserState.CurrentUser.UserName}（經辦）：僅顯示與操作您負責的帳號")
+        </div>
+    }
+</PageHeader>
+
+@if (msg != null)
+{
+    <Toast Type="@msg.Value.Type" Text="@msg.Value.Text" OnClose="() => msg = null" />
+}
+
+@* 查詢條件區 *@
+<section class="app-card p-5">
+    <div class="flex items-center gap-2.5 mb-4">
+        <span class="w-8 h-8 rounded-lg bg-[#eff4ff] text-[#2563EB] flex items-center justify-center">
+            <span class="material-symbols-outlined text-[18px]">filter_alt</span>
+        </span>
+        <h3 class="text-sm font-semibold text-[#0f172a]">查詢條件</h3>
+    </div>
+    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-5">
+        <div class="flex flex-col gap-1.5">
+            <label class="text-xs font-medium text-[#44474e]">暫收日期</label>
+            <input type="date" value="@suspenseDate" @onchange="OnDateChanged" class="@Inp" />
+        </div>
+        <div class="flex flex-col gap-1.5">
+            <label class="text-xs font-medium text-[#44474e]">暫收類型</label>
+            <select @bind="suspenseType" class="@Inp">
+                <option value="ALL">全部類型</option>
+                <option value="DAILY">日常暫收</option>
+                <option value="MANUAL">手工暫收</option>
+                <option value="SECONDARY">二次暫收</option>
+            </select>
+        </div>
+        <div class="flex flex-col gap-1.5">
+            <label class="text-xs font-medium text-[#44474e]">幣別</label>
+            <select @bind="currency" class="@Inp">
+                <option value="NTD">新台幣 (NTD)</option>
+                <option value="USD">美元 (USD)</option>
+                <option value="EUR">歐元 (EUR)</option>
+                <option value="JPY">日圓 (JPY)</option>
+            </select>
+        </div>
+        <div class="flex flex-col gap-1.5">
+            <label class="text-xs font-medium text-[#44474e]">批號</label>
+            <input type="text" list="batchNoOptions" @bind="batchNo"
+                   placeholder="留空＝查詢全部批號／可選或輸入" class="@Inp" />
+            <datalist id="batchNoOptions">
+                @foreach (var b in batchNoOptions)
+                {
+                    <option value="@b" />
+                }
+            </datalist>
+        </div>
+    </div>
+
+    <div class="flex flex-wrap items-center gap-2.5 pt-4 border-t border-[#eef0f4]">
+        <button @onclick="HandleQuery" disabled="@loading" class="@($"{BtnPrimary} px-6")">
+            <span class="material-symbols-outlined text-[18px]">search</span>查詢
+        </button>
+        <button @onclick="HandleAdd" disabled="@loading" class="@BtnSecondary">
+            <span class="material-symbols-outlined text-[18px]">add</span>新增批號
+        </button>
+        <button @onclick="HandleSave" disabled="@(loading || editedAmounts.Count == 0)" class="@BtnSecondary">
+            <span class="material-symbols-outlined text-[18px]">save</span>儲存修改
+            @if (editedAmounts.Count > 0)
+            {
+                <span class="ml-1 px-1.5 py-0.5 bg-[#2563EB] text-white rounded-full text-[11px]">@editedAmounts.Count</span>
+            }
+        </button>
+    </div>
+</section>
+
+@* 批號卡片清單 *@
+@if (batches.Count > 0)
+{
+    <div class="flex flex-col gap-4">
+        @foreach (var card in batches)
+        {
+            var isConfirmed = card.Data.Confirmation?.ConfirmStatus == "CONFIRMED";
+            var anomalyCount = card.Data.Transactions.Count(t => IsAnomaly(t.Tx));
+            var totalSuspense = card.Data.Transactions.Sum(t => t.Tx.SuspenseAmount);
+            var cardCurrency = card.Data.Transactions.FirstOrDefault()?.Tx.Currency ?? card.Data.Currency;
+
+            <section class="app-card overflow-hidden">
+                @* 卡片標題列（可點擊展開/收合） *@
+                <div class="px-5 py-4 flex flex-wrap items-center justify-between gap-3 cursor-pointer hover:bg-[#f8f9fc] transition-colors"
+                     @onclick="() => card.Expanded = !card.Expanded">
+                    <div class="flex items-center gap-3 min-w-0">
+                        <span class="@($"material-symbols-outlined text-[#7a7d85] transition-transform duration-200 {(card.Expanded ? "rotate-90" : "")}")">chevron_right</span>
+                        <span class="w-9 h-9 rounded-lg bg-[#eff4ff] text-[#2563EB] flex items-center justify-center shrink-0">
+                            <span class="material-symbols-outlined text-[20px]">folder_open</span>
+                        </span>
+                        <div class="min-w-0">
+                            <div class="flex items-center gap-2">
+                                <span class="font-semibold text-[#1b1b1e]">批號 @card.Data.BatchNo</span>
+                                <span class="@($"px-2.5 py-0.5 text-xs rounded-full font-medium border {(isConfirmed ? "bg-[#DCFCE7] text-[#166534] border-[#86efac]" : "bg-[#FEF3C7] text-[#b45309] border-[#fde68a]")}")">
+                                    @(isConfirmed ? "已確認" : "未確認")
+                                </span>
+                                @if (anomalyCount > 0)
+                                {
+                                    <span class="px-2.5 py-0.5 text-xs rounded-full font-medium bg-[#FEE2E2] text-[#991B1B] border border-[#fecaca] flex items-center gap-1">
+                                        <span class="material-symbols-outlined text-[14px]">warning</span>@anomalyCount 筆異常
+                                    </span>
+                                }
+                            </div>
+                            <p class="text-xs text-[#7a7d85] mt-0.5">
+                                @card.Data.SuspenseDate・@(CurrencyNames.GetValueOrDefault(cardCurrency, cardCurrency))・共 @card.Data.Transactions.Count 筆
+                            </p>
+                        </div>
+                    </div>
+
+                    <div class="flex items-center gap-4" @onclick:stopPropagation="true">
+                        <div class="text-right hidden sm:block">
+                            <p class="text-[11px] text-[#7a7d85]">總立暫收金額</p>
+                            <p class="@($"text-sm font-bold font-mono {(totalSuspense < 0 ? "text-[#991B1B]" : "text-[#1b1b1e]")}")">
+                                @FmtAmount(totalSuspense, cardCurrency)
+                            </p>
+                        </div>
+                        <div class="flex items-center gap-2 pl-4 border-l border-[#eef0f4]">
+                            <label class="text-xs font-medium text-[#44474e] cursor-pointer select-none">批號確認</label>
+                            <button type="button" role="switch" aria-checked="@isConfirmed" disabled="@loading"
+                                    @onclick="() => HandleConfirmToggle(card)"
+                                    class="@($"relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none disabled:opacity-50 {(isConfirmed ? "bg-[#2563EB]" : "bg-[#c5c6cf]")}")">
+                                <span aria-hidden="true"
+                                      class="@($"pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out {(isConfirmed ? "translate-x-5" : "translate-x-0")}")"></span>
+                            </button>
+                        </div>
+                        <button @onclick="() => HandleDelete(card)" disabled="@loading" title="刪除整批"
+                                class="w-9 h-9 flex items-center justify-center rounded-lg text-[#991B1B] hover:bg-[#FEE2E2] transition-colors disabled:opacity-40">
+                            <span class="material-symbols-outlined text-[20px]">delete</span>
+                        </button>
+                    </div>
+                </div>
+
+                @* 明細表（展開時顯示） *@
+                @if (card.Expanded)
+                {
+                    <div class="border-t border-[#e6e8ef]">
+                        <div class="overflow-x-auto w-full">
+                            <table class="w-full text-left border-collapse min-w-max">
+                                <thead class="bg-[#f8fafc] border-b border-[#e6e8ef] text-xs font-semibold text-[#475569]">
+                                    <tr>
+                                        <th class="px-3 py-3 whitespace-nowrap">帳號短碼</th>
+                                        <th class="px-3 py-3 whitespace-nowrap">帳號用途</th>
+                                        <th class="px-3 py-3 whitespace-nowrap">幣別</th>
+                                        <th class="px-3 py-3 whitespace-nowrap">暫收類型</th>
+                                        <th class="px-3 py-3 whitespace-nowrap text-right">前日公司帳列餘額</th>
+                                        <th class="px-3 py-3 whitespace-nowrap text-right">前日存摺餘額</th>
+                                        <th class="px-3 py-3 whitespace-nowrap text-right">今日公司帳列餘額</th>
+                                        <th class="px-3 py-3 whitespace-nowrap text-right">今日存摺餘額</th>
+                                        <th class="px-3 py-3 whitespace-nowrap text-right text-[#031635]">立暫收金額</th>
+                                        <th class="px-3 py-3 whitespace-nowrap text-right">立暫收金額（記帳幣）</th>
+                                        <th class="px-3 py-3 whitespace-nowrap">維護人員</th>
+                                        <th class="px-3 py-3 whitespace-nowrap">維護時間</th>
+                                    </tr>
+                                </thead>
+                                <tbody class="text-sm divide-y divide-[#eef0f4]">
+                                    @foreach (var view in card.Data.Transactions)
+                                    {
+                                        var tx = view.Tx;
+                                        var anomaly = IsAnomaly(tx);
+                                        var editable = !isConfirmed && tx.SuspenseType == "MANUAL";
+
+                                        <tr class="@($"transition-colors {(anomaly ? "bg-[#FEF2F2] hover:bg-[#FEE2E2]" : "hover:bg-[#f8f9fc]")}")">
+                                            <td class="@($"px-3 py-2.5 font-medium {(anomaly ? "text-[#991B1B]" : "text-[#1b1b1e]")}")">
+                                                <span class="flex items-center gap-1">
+                                                    @if (anomaly)
+                                                    {
+                                                        <span class="material-symbols-outlined text-[16px] text-[#991B1B]">warning</span>
+                                                    }
+                                                    @tx.AccountCode
+                                                </span>
+                                            </td>
+                                            <td class="px-3 py-2.5 text-[#44474e]">@view.AccountPurpose</td>
+                                            <td class="px-3 py-2.5">
+                                                <span class="@($"px-2 py-0.5 rounded-full text-xs font-medium {(tx.Currency == "NTD" ? "bg-[#dadff1] text-[#3a4a78]" : "bg-[#e0f2fe] text-[#0369a1] border border-[#bae6fd]")}")">@tx.Currency</span>
+                                            </td>
+                                            <td class="px-3 py-2.5">
+                                                <span class="px-2 py-0.5 bg-[#eef0f4] text-[#44474e] rounded-full text-xs border border-[#dfe2e9]">
+                                                    @SuspenseTypes.Labels.GetValueOrDefault(tx.SuspenseType, tx.SuspenseType)
+                                                </span>
+                                            </td>
+                                            <td class="px-3 py-2.5 text-right font-mono text-[#44474e]">@FmtAmount(tx.PrevCompanyBalance, tx.Currency)</td>
+                                            <td class="px-3 py-2.5 text-right font-mono text-[#44474e]">@FmtAmount(tx.PrevPassbookBalance, tx.Currency)</td>
+                                            <td class="@($"px-3 py-2.5 text-right font-mono {(anomaly ? "text-[#991B1B] font-medium" : "")}")">@FmtAmount(tx.TodayCompanyBalance, tx.Currency)</td>
+                                            <td class="@($"px-3 py-2.5 text-right font-mono {(anomaly ? "text-[#991B1B] font-medium" : "")}")">@FmtAmount(tx.TodayPassbookBalance, tx.Currency)</td>
+                                            <td class="px-3 py-2.5 text-right p-1">
+                                                @if (editable)
+                                                {
+                                                    <input type="text" value="@GetAmountText(tx)"
+                                                           @onchange="e => editedAmounts[tx.Id] = e.Value?.ToString() ?? string.Empty"
+                                                           class="@($"w-full text-right font-mono border rounded-lg bg-white px-2 py-1.5 shadow-sm font-medium focus:border-[#2563EB] focus:ring-2 focus:ring-[#2563EB]/20 outline-none {(anomaly ? "border-[#991B1B]" : "border-[#d8dbe3]")}")" />
+                                                }
+                                                else
+                                                {
+                                                    <span class="@($"block text-right font-mono font-semibold px-2 py-1.5 {(tx.SuspenseAmount < 0 ? "text-[#991B1B]" : tx.SuspenseAmount > 0 ? "text-[#166534]" : "text-[#1b1b1e]")}")">
+                                                        @FmtAmount(tx.SuspenseAmount, tx.Currency)
+                                                    </span>
+                                                }
+                                            </td>
+                                            <td class="px-3 py-2.5 text-right font-mono text-[#44474e]">@FmtAmount(tx.SuspenseAmountLocal, tx.Currency)</td>
+                                            <td class="px-3 py-2.5 text-[#44474e] text-xs">@tx.UpdatedBy</td>
+                                            <td class="px-3 py-2.5 text-[#44474e] text-xs font-mono">@tx.UpdatedAt.ToString("HH:mm:ss")</td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                        </div>
+                        <div class="px-5 py-2.5 bg-[#f8f9fc] border-t border-[#eef0f4] text-xs text-[#7a7d85]">
+                            共 @card.Data.Transactions.Count 筆明細@(isConfirmed ? "・批號已確認，立暫收金額不可修改" : "")
+                        </div>
+                    </div>
+                }
+            </section>
+        }
+    </div>
+}
+else
+{
+    <section class="bg-white border border-dashed border-[#D1D5DB] rounded-lg">
+        <EmptyState Icon="receipt_long" Title="尚無批號資料"
+                    Hint="請於上方輸入批號並點選「查詢」，或點選「新增批號」建立暫收交易；每個批號會以獨立卡片往下顯示。" />
+    </section>
+}
+
+@code {
+    private const string Inp = "form-input";
+    private const string BtnPrimary = "btn btn-primary";
+    private const string BtnSecondary = "btn btn-secondary";
+
+    private static readonly Dictionary<string, string> CurrencyNames = new()
+    {
+        ["NTD"] = "新台幣", ["USD"] = "美元", ["EUR"] = "歐元", ["JPY"] = "日圓",
+    };
+
+    private class BatchCard(BatchData data)
+    {
+        public BatchData Data { get; set; } = data;
+        public bool Expanded { get; set; } = true;
+    }
+
+    private string suspenseDate = "2023-10-27";
+    private string suspenseType = "ALL";
+    private string currency = "NTD";
+    private string batchNo = "";
+    private List<string> batchNoOptions = [];
+    private List<BatchCard> batches = [];
+    private readonly Dictionary<int, string> editedAmounts = [];
+    private (string Type, string Text)? msg;
+    private bool loading;
+
+    protected override void OnInitialized()
+    {
+        UserState.OnChange += HandleUserChanged;
+        LoadBatchNoOptions();
+    }
+
+    public void Dispose() => UserState.OnChange -= HandleUserChanged;
+
+    // 切換操作者：清空已載入卡片，避免顯示前一位使用者的資料
+    private void HandleUserChanged()
+    {
+        batches = [];
+        editedAmounts.Clear();
+        LoadBatchNoOptions();
+        InvokeAsync(StateHasChanged);
+    }
+
+    private void OnDateChanged(ChangeEventArgs e)
+    {
+        suspenseDate = e.Value?.ToString() ?? "";
+        LoadBatchNoOptions();
+    }
+
+    private void LoadBatchNoOptions()
+    {
+        batchNoOptions = string.IsNullOrEmpty(suspenseDate)
+            ? []
+            : SuspenseSvc.GetBatchNumbers(suspenseDate, UserState.CurrentUser?.Id ?? 0);
+    }
+
+    private void Show(string type, string text)
+    {
+        msg = (type, text);
+        _ = AutoDismiss();
+    }
+
+    private async Task AutoDismiss()
+    {
+        var current = msg;
+        await Task.Delay(5000);
+        if (msg == current)
+        {
+            msg = null;
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private static bool IsAnomaly(SuspenseTransaction tx) =>
+        tx.SuspenseAmount < 0
+        || (tx.SuspenseType == "DAILY" && tx.PrevPassbookBalance == 0)
+        || (tx.SuspenseType == "SECONDARY" && tx.TodayPassbookBalance == 0);
+
+    private static string FmtAmount(decimal val, string cur) =>
+        cur == "NTD" ? val.ToString("N0") : val.ToString("N2");
+
+    private string GetAmountText(SuspenseTransaction tx) =>
+        editedAmounts.TryGetValue(tx.Id, out var v) ? v : FmtAmount(tx.SuspenseAmount, tx.Currency);
+
+    private void HandleQuery()
+    {
+        loading = true;
+        try
+        {
+            var result = SuspenseSvc.Query(suspenseDate, suspenseType, currency, batchNo, UserState.CurrentUser?.Id ?? 0);
+            if (result.Count == 0)
+            {
+                Show("error", string.IsNullOrEmpty(batchNo) ? "查無符合條件的暫收資料" : $"批號 {batchNo} 查無資料");
+                return;
+            }
+            // 查詢＝取代畫面上既有卡片（避免殘留其他日期/條件的批號）
+            batches = result.Select(b => new BatchCard(b)).ToList();
+            editedAmounts.Clear();
+            Show("success", string.IsNullOrEmpty(batchNo) ? $"查詢成功，共載入 {result.Count} 個批號" : $"批號 {batchNo} 查詢成功");
+        }
+        catch (BusinessException e)
+        {
+            Show("error", e.Message);
+        }
+        finally
+        {
+            loading = false;
+        }
+    }
+
+    private void HandleAdd()
+    {
+        loading = true;
+        try
+        {
+            var (newBatchNo, count) = SuspenseSvc.CreateBatch(suspenseDate, suspenseType, currency, string.IsNullOrEmpty(batchNo) ? null : batchNo, UserState.CurrentUser?.Id ?? 0);
+            // 載入新批號為一張新卡片（往下新增），查詢欄位維持不變
+            var data = SuspenseSvc.Query(suspenseDate, suspenseType, currency, newBatchNo, UserState.CurrentUser?.Id ?? 0).FirstOrDefault();
+            if (data != null)
+            {
+                var existing = batches.FindIndex(b => b.Data.BatchNo == newBatchNo);
+                if (existing >= 0) batches[existing].Data = data;
+                else batches.Add(new BatchCard(data));
+            }
+            LoadBatchNoOptions();
+            Show("success", $"批號 {newBatchNo} 新增成功，共 {count} 筆");
+        }
+        catch (BusinessException e)
+        {
+            Show("error", e.Message);
+        }
+        finally
+        {
+            loading = false;
+        }
+    }
+
+    private void HandleSave()
+    {
+        var allTx = batches.SelectMany(b => b.Data.Transactions).Select(v => v.Tx).ToList();
+        var toSave = editedAmounts
+            .Select(kv =>
+            {
+                var tx = allTx.FirstOrDefault(t => t.Id == kv.Key);
+                var amount = decimal.TryParse(kv.Value.Replace(",", ""), out var v) ? v : 0m;
+                return (kv.Key, amount, tx?.Version ?? 0);
+            })
+            .ToList();
+        if (toSave.Count == 0) { Show("error", "無修改資料可儲存"); return; }
+
+        loading = true;
+        try
+        {
+            var (success, fail) = SuspenseSvc.SaveAmounts(toSave, UserState.CurrentUser?.UserName ?? "User");
+            Show(fail > 0 ? "error" : "success",
+                $"儲存完成：成功 {success} 筆{(fail > 0 ? $"，失敗 {fail} 筆（可能已確認、已日結或版本衝突）" : "")}");
+            editedAmounts.Clear();
+            RefreshAllCards();
+        }
+        catch (BusinessException e)
+        {
+            Show("error", e.Message);
+        }
+        finally
+        {
+            loading = false;
+        }
+    }
+
+    private async Task HandleDelete(BatchCard card)
+    {
+        if (!await JS.InvokeAsync<bool>("confirm", $"確定要刪除批號 {card.Data.BatchNo} 的所有暫收交易資料？")) return;
+        loading = true;
+        try
+        {
+            var count = SuspenseSvc.DeleteBatch(card.Data.BatchNo, UserState.CurrentUser?.Id ?? 0);
+            Show("success", $"批號 {card.Data.BatchNo} 已刪除，共 {count} 筆");
+            batches.RemoveAll(b => b.Data.BatchNo == card.Data.BatchNo);
+            LoadBatchNoOptions();
+        }
+        catch (BusinessException e)
+        {
+            Show("error", e.Message);
+        }
+        finally
+        {
+            loading = false;
+        }
+    }
+
+    private void HandleConfirmToggle(BatchCard card)
+    {
+        var isConfirmed = card.Data.Confirmation?.ConfirmStatus == "CONFIRMED";
+        var firstTx = card.Data.Transactions.FirstOrDefault()?.Tx;
+        loading = true;
+        try
+        {
+            if (isConfirmed)
+            {
+                var (vouchers, reports) = SuspenseSvc.CancelConfirm(card.Data.BatchNo, firstTx?.SuspenseDate ?? card.Data.SuspenseDate,
+                    UserState.CurrentUser?.UserName ?? "User", UserState.CurrentUser?.Id ?? 0);
+                Show("success", $"批號 {card.Data.BatchNo} 取消確認成功，刪除 {vouchers} 筆傳票、{reports} 筆通報");
+            }
+            else
+            {
+                var count = SuspenseSvc.Confirm(card.Data.BatchNo, firstTx?.SuspenseType ?? card.Data.SuspenseType,
+                    firstTx?.SuspenseDate ?? card.Data.SuspenseDate,
+                    UserState.CurrentUser?.UserName ?? "User", UserState.CurrentUser?.Id ?? 0);
+                Show("success", $"批號 {card.Data.BatchNo} 確認成功，產生 {count} 筆傳票");
+            }
+            RefreshCard(card);
+        }
+        catch (BusinessException e)
+        {
+            Show("error", e.Message);
+        }
+        finally
+        {
+            loading = false;
+        }
+    }
+
+    private void RefreshCard(BatchCard card)
+    {
+        var data = SuspenseSvc.Query(card.Data.SuspenseDate, card.Data.SuspenseType, card.Data.Currency, card.Data.BatchNo, UserState.CurrentUser?.Id ?? 0).FirstOrDefault();
+        if (data != null) card.Data = data;
+    }
+
+    private void RefreshAllCards()
+    {
+        foreach (var card in batches) RefreshCard(card);
+    }
+}

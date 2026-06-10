@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="zh-TW" class="h-full antialiased">
+
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <base href="/" />
+    <title>銀行存款資金管理系統</title>
+    @* Tailwind Play CDN：開發/原型用；正式部署改為預編譯（見 ARCHITECTURE.md §前端樣式） *@
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        brand: {
+                            50: '#EFF6FF', 100: '#DBEAFE', 200: '#BFDBFE',
+                            500: '#3B82F6', 600: '#2563EB', 700: '#1D4ED8',
+                        },
+                    },
+                },
+            },
+        };
+    </script>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700&display=swap" rel="stylesheet" />
+    <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="app.css" />
+    <HeadOutlet @rendermode="InteractiveServer" />
+</head>
+
+<body class="min-h-screen flex flex-col bg-[#F3F4F6] text-[#111827]" style="font-family:'Noto Sans TC',sans-serif">
+    <Routes @rendermode="InteractiveServer" />
+    <script src="_framework/blazor.web.js"></script>
+</body>
+
+</html>
