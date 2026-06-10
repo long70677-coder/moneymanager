@@ -17,11 +17,9 @@ export async function GET(request: NextRequest) {
   const batchNo = url.searchParams.get("batchNo");
   const userId = parseInt(url.searchParams.get("userId") || "0");
 
-  if (!batchNo) {
-    return NextResponse.json({ error: "批號必填" }, { status: 400 });
-  }
+  // 批號非必填：留空時依日期／類型／幣別查詢符合條件的所有批號
   if (!currency || currency === "ALL") {
-    return NextResponse.json({ error: "幣別必填（單一批號僅限單一幣別）" }, { status: 400 });
+    return NextResponse.json({ error: "幣別必填（同一批號僅限單一幣別）" }, { status: 400 });
   }
 
   // 權限：經辦僅能看自己負責的帳號，主管看全部
@@ -45,30 +43,49 @@ export async function GET(request: NextRequest) {
   }
   sql += " AND st.currency = ?";
   params.push(currency);
-  sql += " AND st.batch_no = ?";
-  params.push(batchNo);
+  if (batchNo) {
+    sql += " AND st.batch_no = ?";
+    params.push(batchNo);
+  }
 
   if (accessible !== null) {
     if (accessible.length === 0) {
-      return NextResponse.json({ transactions: [], batchConfirmation: null, total: 0 });
+      return NextResponse.json({ batches: [], transactions: [], batchConfirmation: null, total: 0 });
     }
     sql += ` AND st.account_code IN (${accessible.map(() => "?").join(",")})`;
     params.push(...accessible);
   }
 
-  sql += " ORDER BY st.account_code";
+  sql += " ORDER BY st.batch_no, st.account_code";
 
-  const transactions = db.prepare(sql).all(...params);
+  const rows = db.prepare(sql).all(...params) as Array<Record<string, unknown>>;
 
-  const batchConfirm = db.prepare(`
-    SELECT * FROM batch_confirmations
-    WHERE batch_no = ? LIMIT 1
-  `).get(batchNo);
+  // 依批號分組為卡片
+  const grouped = new Map<string, Array<Record<string, unknown>>>();
+  for (const r of rows) {
+    const key = String(r.batch_no);
+    if (!grouped.has(key)) grouped.set(key, []);
+    grouped.get(key)!.push(r);
+  }
+
+  const confirmStmt = db.prepare("SELECT * FROM batch_confirmations WHERE batch_no = ? LIMIT 1");
+  const batches = Array.from(grouped.entries()).map(([bNo, txs]) => ({
+    batchNo: bNo,
+    suspenseDate: txs[0].suspense_date,
+    suspenseType: txs[0].suspense_type,
+    currency: txs[0].currency,
+    transactions: txs,
+    batchConfirmation: confirmStmt.get(bNo) || null,
+  }));
+
+  // 向後相容：指定單一批號查詢時，仍回傳 transactions / batchConfirmation
+  const single = batchNo ? batches[0] : null;
 
   return NextResponse.json({
-    transactions,
-    batchConfirmation: batchConfirm || null,
-    total: transactions.length,
+    batches,
+    transactions: single?.transactions ?? [],
+    batchConfirmation: single?.batchConfirmation ?? null,
+    total: rows.length,
   });
 }
 

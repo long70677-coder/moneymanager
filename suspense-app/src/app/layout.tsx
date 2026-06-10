@@ -19,6 +19,7 @@ const navItems = [
   { icon: "account_balance", label: "會計作業", href: "#", active: false },
   { icon: "payments", label: "資金管理", href: "#", active: false },
   { icon: "history_edu", label: "暫收交易", href: "/suspense", active: true },
+  { icon: "database", label: "基本資料維護", href: "/master", active: false },
   { icon: "settings", label: "系統設定", href: "#", active: false },
 ];
 

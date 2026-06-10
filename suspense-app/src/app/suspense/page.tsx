@@ -87,38 +87,48 @@ export default function SuspensePage() {
   }, []);
 
   const handleQuery = useCallback(async () => {
-    if (!batchNo) {
-      showMessage("error", "批號必填");
-      return;
-    }
     if (currency === "ALL") {
       showMessage("error", "請選擇單一幣別（同一批號僅限單一幣別）");
       return;
     }
     setLoading(true);
     try {
-      const data = await fetchBatch(suspenseDate, suspenseType, currency, batchNo);
-      if (data.transactions.length === 0) {
-        showMessage("error", `批號 ${batchNo} 查無資料`);
+      const params = new URLSearchParams();
+      if (suspenseDate) params.set("suspenseDate", suspenseDate);
+      if (suspenseType !== "ALL") params.set("suspenseType", suspenseType);
+      params.set("currency", currency);
+      if (batchNo) params.set("batchNo", batchNo);
+      if (currentUser) params.set("userId", String(currentUser.id));
+      const res = await fetch(`/api/suspense-transactions?${params}`);
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "查詢失敗");
+
+      const resultBatches = (data.batches ?? []) as Array<{
+        batchNo: string;
+        suspenseDate: string;
+        suspenseType: string;
+        currency: string;
+        transactions: SuspenseTransaction[];
+        batchConfirmation: BatchConfirmation | null;
+      }>;
+
+      if (resultBatches.length === 0) {
+        showMessage("error", batchNo ? `批號 ${batchNo} 查無資料` : "查無符合條件的暫收資料");
         return;
       }
-      upsertCard({
-        batchNo,
-        suspenseDate,
-        suspenseType,
-        currency,
-        transactions: data.transactions,
-        batchConfirmation: data.batchConfirmation,
-        expanded: true,
-      });
+
+      resultBatches.forEach(b => upsertCard({ ...b, expanded: true }));
       setEditedAmounts({});
-      showMessage("success", `批號 ${batchNo} 查詢成功`);
+      showMessage(
+        "success",
+        batchNo ? `批號 ${batchNo} 查詢成功` : `查詢成功，共載入 ${resultBatches.length} 個批號`,
+      );
     } catch (e) {
       showMessage("error", e instanceof Error ? e.message : "查詢失敗");
     } finally {
       setLoading(false);
     }
-  }, [suspenseDate, suspenseType, currency, batchNo, fetchBatch, upsertCard, showMessage]);
+  }, [suspenseDate, suspenseType, currency, batchNo, currentUser, upsertCard, showMessage]);
 
   const handleAdd = useCallback(async () => {
     if (!suspenseDate || suspenseType === "ALL" || currency === "ALL") {
@@ -365,7 +375,7 @@ export default function SuspensePage() {
               type="text"
               value={batchNo}
               onChange={e => setBatchNo(e.target.value)}
-              placeholder="查詢批號，或留空由系統自動取號新增"
+              placeholder="留空＝查詢符合條件全部批號／新增時自動取號"
               className="w-full border border-[#d8dbe3] rounded-lg focus:border-[#2563EB] focus:ring-2 focus:ring-[#2563EB]/20 text-sm h-10 px-3 bg-white outline-none transition"
             />
           </div>
