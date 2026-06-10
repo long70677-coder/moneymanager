@@ -15,6 +15,7 @@ export function getDb(): Database.Database {
     db.pragma("journal_mode = WAL");
     db.pragma("foreign_keys = ON");
     initSchema(db);
+    migrateSchema(db);
   }
   return db;
 }
@@ -31,6 +32,7 @@ function initSchema(db: Database.Database) {
       is_suspense INTEGER DEFAULT 1,
       is_policy_account INTEGER DEFAULT 0,
       currency_type TEXT DEFAULT 'TWD',
+      import_file_name TEXT,
       created_at TEXT DEFAULT (datetime('now')),
       updated_at TEXT DEFAULT (datetime('now'))
     );
@@ -42,6 +44,7 @@ function initSchema(db: Database.Database) {
       currency TEXT NOT NULL,
       balance REAL DEFAULT 0,
       data_type TEXT DEFAULT 'PREV_DAY',
+      import_seq INTEGER DEFAULT 1,
       file_name TEXT,
       memo TEXT,
       is_reviewed INTEGER DEFAULT 0,
@@ -51,7 +54,7 @@ function initSchema(db: Database.Database) {
       created_at TEXT DEFAULT (datetime('now')),
       updated_by TEXT DEFAULT 'System',
       updated_at TEXT DEFAULT (datetime('now')),
-      UNIQUE(balance_date, account_code, currency),
+      UNIQUE(balance_date, account_code, currency, import_seq),
       FOREIGN KEY (account_code) REFERENCES bank_accounts(account_code)
     );
 
@@ -158,7 +161,123 @@ function initSchema(db: Database.Database) {
       FOREIGN KEY (account_code) REFERENCES bank_accounts(account_code),
       FOREIGN KEY (user_id) REFERENCES users(id)
     );
+
+    -- FUN2.1.1 轉檔：銀行格式設定檔（鍵=銀行+幣別，幣別可用 ZZZ 共用）
+    CREATE TABLE IF NOT EXISTS bank_format_profiles (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      bank_code TEXT NOT NULL,
+      currency TEXT NOT NULL,
+      profile_name TEXT,
+      engine TEXT NOT NULL DEFAULT 'DELIMITED',
+      encoding TEXT DEFAULT 'UTF-8',
+      delimiter TEXT DEFAULT ',',
+      has_header INTEGER DEFAULT 1,
+      skip_rows INTEGER DEFAULT 0,
+      sheet_name TEXT,
+      column_map TEXT NOT NULL,
+      date_format TEXT,
+      amount_format TEXT,
+      currency_map TEXT,
+      version INTEGER DEFAULT 1,
+      effective_date TEXT,
+      status TEXT DEFAULT 'ACTIVE',
+      is_reviewed INTEGER DEFAULT 0,
+      reviewed_by TEXT,
+      reviewed_at TEXT,
+      created_by TEXT DEFAULT 'System',
+      created_at TEXT DEFAULT (datetime('now')),
+      updated_by TEXT DEFAULT 'System',
+      updated_at TEXT DEFAULT (datetime('now')),
+      UNIQUE(bank_code, currency, version)
+    );
+
+    -- FUN2.1.1 轉檔：轉檔歷程檔
+    CREATE TABLE IF NOT EXISTS import_logs (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      batch_id TEXT NOT NULL,
+      file_name TEXT,
+      account_code TEXT,
+      profile_id INTEGER,
+      balance_date TEXT,
+      total_count INTEGER DEFAULT 0,
+      success_count INTEGER DEFAULT 0,
+      fail_count INTEGER DEFAULT 0,
+      status TEXT DEFAULT 'SUCCESS',
+      errors TEXT,
+      uploaded_by TEXT DEFAULT 'System',
+      uploaded_at TEXT DEFAULT (datetime('now'))
+    );
+
+    -- FUN2.1.1/結帳：帳列餘額檔（本日結餘，由結帳流程供應，此處唯讀消費）
+    CREATE TABLE IF NOT EXISTS ledger_balances (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      balance_date TEXT NOT NULL,
+      account_code TEXT NOT NULL,
+      currency TEXT NOT NULL,
+      balance REAL DEFAULT 0,
+      is_closed INTEGER DEFAULT 0,
+      closed_at TEXT,
+      created_by TEXT DEFAULT 'System',
+      created_at TEXT DEFAULT (datetime('now')),
+      updated_by TEXT DEFAULT 'System',
+      updated_at TEXT DEFAULT (datetime('now')),
+      UNIQUE(balance_date, account_code, currency),
+      FOREIGN KEY (account_code) REFERENCES bank_accounts(account_code)
+    );
   `);
+}
+
+/**
+ * 既有 DB 的平滑升級（idempotent）。
+ * - bank_accounts.import_file_name 缺欄則補。
+ * - passbook_balances 缺 import_seq 則重建（含新唯一鍵 +import_seq），保留既有資料設 seq=1。
+ * 三張新表由 initSchema 的 CREATE IF NOT EXISTS 處理，無需在此遷移。
+ */
+function migrateSchema(db: Database.Database) {
+  const hasCol = (table: string, col: string) =>
+    (db.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>).some(c => c.name === col);
+
+  if (!hasCol("bank_accounts", "import_file_name")) {
+    db.exec("ALTER TABLE bank_accounts ADD COLUMN import_file_name TEXT");
+  }
+
+  if (!hasCol("passbook_balances", "import_seq")) {
+    // SQLite 無法 ALTER 既有 UNIQUE 約束 → 重建表。暫關 FK 以利 rename/drop。
+    db.pragma("foreign_keys = OFF");
+    db.exec(`
+      ALTER TABLE passbook_balances RENAME TO passbook_balances_old;
+      CREATE TABLE passbook_balances (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        balance_date TEXT NOT NULL,
+        account_code TEXT NOT NULL,
+        currency TEXT NOT NULL,
+        balance REAL DEFAULT 0,
+        data_type TEXT DEFAULT 'PREV_DAY',
+        import_seq INTEGER DEFAULT 1,
+        file_name TEXT,
+        memo TEXT,
+        is_reviewed INTEGER DEFAULT 0,
+        reviewed_by TEXT,
+        reviewed_at TEXT,
+        created_by TEXT DEFAULT 'System',
+        created_at TEXT DEFAULT (datetime('now')),
+        updated_by TEXT DEFAULT 'System',
+        updated_at TEXT DEFAULT (datetime('now')),
+        UNIQUE(balance_date, account_code, currency, import_seq),
+        FOREIGN KEY (account_code) REFERENCES bank_accounts(account_code)
+      );
+      INSERT INTO passbook_balances
+        (id, balance_date, account_code, currency, balance, data_type, import_seq,
+         file_name, memo, is_reviewed, reviewed_by, reviewed_at,
+         created_by, created_at, updated_by, updated_at)
+      SELECT id, balance_date, account_code, currency, balance, data_type, 1,
+         file_name, memo, is_reviewed, reviewed_by, reviewed_at,
+         created_by, created_at, updated_by, updated_at
+      FROM passbook_balances_old;
+      DROP TABLE passbook_balances_old;
+    `);
+    db.pragma("foreign_keys = ON");
+  }
 }
 
 /**
@@ -212,7 +331,7 @@ export function seedData(db: Database.Database) {
   }
 
   const accountCount = db.prepare("SELECT COUNT(*) as cnt FROM bank_accounts").get() as { cnt: number };
-  if (accountCount.cnt > 0) return;
+  if (accountCount.cnt === 0) {
 
   const insertAccount = db.prepare(`
     INSERT OR IGNORE INTO bank_accounts (account_code, account_long_code, bank_code, account_name, account_purpose, is_suspense, is_policy_account, currency_type)
@@ -271,4 +390,53 @@ export function seedData(db: Database.Database) {
   });
 
   insertMany();
+  }
+
+  seedImportConfig(db);
+}
+
+/**
+ * FUN2.1.1 轉檔 demo 設定（idempotent，既有 DB 也會補）：
+ * - 帳號檔名 import_file_name（一檔一帳號）
+ * - 銀行格式 profile（DELIMITED）
+ * - 帳列餘額 ledger_balances（結帳流程未實作前的測試資料）
+ */
+function seedImportConfig(db: Database.Database) {
+  // 帳號檔名：缺者補（demo 以「帳號短碼.csv」為檔名）
+  db.prepare("UPDATE bank_accounts SET import_file_name = account_code || '.csv' WHERE import_file_name IS NULL").run();
+
+  // 銀行格式 profile：以欄名對應
+  const profCount = db.prepare("SELECT COUNT(*) as cnt FROM bank_format_profiles").get() as { cnt: number };
+  if (profCount.cnt === 0) {
+    const columnMap = JSON.stringify({
+      balanceDate: { by: "name", key: "餘額日期" },
+      accountCode: { by: "name", key: "帳號" },
+      currency: { by: "name", key: "幣別" },
+      balance: { by: "name", key: "餘額" },
+    });
+    const insertProfile = db.prepare(`
+      INSERT OR IGNORE INTO bank_format_profiles
+        (bank_code, currency, profile_name, engine, encoding, delimiter, has_header, skip_rows, column_map, date_format, status)
+      VALUES (?, ?, ?, 'DELIMITED', 'UTF-8', ',', 1, 0, ?, 'YYYY-MM-DD', 'ACTIVE')
+    `);
+    db.transaction(() => {
+      insertProfile.run("012", "NTD", "第一銀行 台幣餘額檔", columnMap);
+      insertProfile.run("013", "NTD", "華南銀行 台幣餘額檔", columnMap);
+      insertProfile.run("012", "ZZZ", "第一銀行 外幣餘額檔（共用）", columnMap);
+    })();
+  }
+
+  // 帳列餘額（本日結餘）：結帳流程未實作前先 seed 前一營業日資料供畫面顯示
+  const ledgerCount = db.prepare("SELECT COUNT(*) as cnt FROM ledger_balances").get() as { cnt: number };
+  if (ledgerCount.cnt === 0) {
+    const insertLedger = db.prepare(`
+      INSERT OR IGNORE INTO ledger_balances (balance_date, account_code, currency, balance, is_closed, closed_at)
+      VALUES (?, ?, ?, ?, 1, datetime('now'))
+    `);
+    db.transaction(() => {
+      insertLedger.run("2023-10-26", "ACT-001", "NTD", 1250000);
+      insertLedger.run("2023-10-26", "ACT-002", "NTD", 3450000);
+      insertLedger.run("2023-10-26", "ACT-089", "NTD", 500000);
+    })();
+  }
 }

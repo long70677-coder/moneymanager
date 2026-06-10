@@ -28,4 +28,13 @@ export const accountRepo = {
       .get(accountCode) as { account_long_code: string } | undefined;
     return row?.account_long_code;
   },
+
+  findByCode(db: DB, accountCode: string): Row | undefined {
+    return db.prepare("SELECT * FROM bank_accounts WHERE account_code = ?").get(accountCode) as Row | undefined;
+  },
+
+  /** 依轉檔檔名找帳號（一檔一帳號；回陣列以便處理命中多筆的 fallback）。 */
+  findByImportFileName(db: DB, fileName: string): Row[] {
+    return db.prepare("SELECT * FROM bank_accounts WHERE import_file_name = ?").all(fileName) as Row[];
+  },
 };

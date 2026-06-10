@@ -196,6 +196,17 @@ export const suspenseRepo = {
     return rows.map(r => r.batch_no);
   },
 
+  /** 指定帳號+幣別，於任一暫收日期是否已有暫收交易（供轉檔覆蓋前的立暫收檢核）。 */
+  existsByAccountCurrencyDates(db: DB, accountCode: string, currency: string, suspenseDates: string[]): boolean {
+    if (suspenseDates.length === 0) return false;
+    const placeholders = suspenseDates.map(() => "?").join(",");
+    const row = db.prepare(`
+      SELECT COUNT(*) as cnt FROM suspense_transactions
+      WHERE account_code = ? AND currency = ? AND suspense_date IN (${placeholders})
+    `).get(accountCode, currency, ...suspenseDates) as { cnt: number };
+    return row.cnt > 0;
+  },
+
   /** 該批號中立暫收金額非零的交易（供產傳票/通報）。 */
   findNonZeroByBatch(db: DB, batchNo: string): Row[] {
     return db.prepare("SELECT * FROM suspense_transactions WHERE batch_no = ? AND suspense_amount != 0")
