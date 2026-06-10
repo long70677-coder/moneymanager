@@ -134,7 +134,8 @@ export default function SuspensePage() {
         return;
       }
 
-      resultBatches.forEach(b => upsertCard({ ...b, expanded: true }));
+      // 查詢＝顯示符合當前條件的結果，取代畫面上既有卡片（避免殘留其他日期/條件的批號）
+      setBatches(resultBatches.map(b => ({ ...b, expanded: true })));
       setEditedAmounts({});
       showMessage(
         "success",
@@ -145,7 +146,7 @@ export default function SuspensePage() {
     } finally {
       setLoading(false);
     }
-  }, [suspenseDate, suspenseType, currency, batchNo, currentUser, upsertCard, showMessage]);
+  }, [suspenseDate, suspenseType, currency, batchNo, currentUser, showMessage]);
 
   const handleAdd = useCallback(async () => {
     if (!suspenseDate || suspenseType === "ALL" || currency === "ALL") {
