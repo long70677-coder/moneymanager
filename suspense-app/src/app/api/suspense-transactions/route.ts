@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getDb, seedData } from "@/lib/db";
+import { getDb, seedData, getAccessibleAccountCodes } from "@/lib/db";
 
 function initDb() {
   const db = getDb();
@@ -15,10 +15,17 @@ export async function GET(request: NextRequest) {
   const suspenseType = url.searchParams.get("suspenseType");
   const currency = url.searchParams.get("currency");
   const batchNo = url.searchParams.get("batchNo");
+  const userId = parseInt(url.searchParams.get("userId") || "0");
 
   if (!batchNo) {
     return NextResponse.json({ error: "批號必填" }, { status: 400 });
   }
+  if (!currency || currency === "ALL") {
+    return NextResponse.json({ error: "幣別必填（單一批號僅限單一幣別）" }, { status: 400 });
+  }
+
+  // 權限：經辦僅能看自己負責的帳號，主管看全部
+  const accessible = getAccessibleAccountCodes(db, userId, suspenseDate || undefined);
 
   let sql = `
     SELECT st.*, ba.account_purpose, ba.account_name
@@ -36,16 +43,20 @@ export async function GET(request: NextRequest) {
     sql += " AND st.suspense_type = ?";
     params.push(suspenseType);
   }
-  if (currency && currency !== "ALL") {
-    sql += " AND st.currency = ?";
-    params.push(currency);
-  }
-  if (batchNo) {
-    sql += " AND st.batch_no = ?";
-    params.push(batchNo);
+  sql += " AND st.currency = ?";
+  params.push(currency);
+  sql += " AND st.batch_no = ?";
+  params.push(batchNo);
+
+  if (accessible !== null) {
+    if (accessible.length === 0) {
+      return NextResponse.json({ transactions: [], batchConfirmation: null, total: 0 });
+    }
+    sql += ` AND st.account_code IN (${accessible.map(() => "?").join(",")})`;
+    params.push(...accessible);
   }
 
-  sql += " ORDER BY st.account_code, st.currency";
+  sql += " ORDER BY st.account_code";
 
   const transactions = db.prepare(sql).all(...params);
 
@@ -65,10 +76,10 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   const db = initDb();
   const body = await request.json();
-  const { suspenseDate, suspenseType, currency, batchNo } = body;
+  const { suspenseDate, suspenseType, currency, batchNo, userId } = body;
 
   if (!suspenseDate || !suspenseType || !currency) {
-    return NextResponse.json({ error: "必填欄位未填" }, { status: 400 });
+    return NextResponse.json({ error: "必填欄位未填（暫收日期、暫收類型、幣別）" }, { status: 400 });
   }
 
   // 檢查日結
@@ -117,11 +128,30 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "指定批號已存在資料，不可新增" }, { status: 400 });
   }
 
+  // 單一批號僅限單一幣別：若同批號已被其他幣別使用，拒絕
+  const otherCurrency = db.prepare(`
+    SELECT DISTINCT currency FROM suspense_transactions WHERE batch_no = ? AND currency != ?
+  `).get(finalBatchNo, currency) as { currency: string } | undefined;
+
+  if (otherCurrency) {
+    return NextResponse.json({ error: `批號 ${finalBatchNo} 已用於幣別 ${otherCurrency.currency}，同一批號不可混用不同幣別` }, { status: 400 });
+  }
+
   // 取得所有暫收帳戶
-  const accounts = db.prepare(`
+  let accounts = db.prepare(`
     SELECT * FROM bank_accounts WHERE is_suspense = 1
     AND (currency_type = ? OR (? = 'NTD' AND currency_type = 'TWD'))
   `).all(currency === "NTD" ? "TWD" : "FOREIGN", currency) as Array<Record<string, unknown>>;
+
+  // 權限：經辦僅能對自己負責的帳號立暫收，主管不限
+  const accessible = getAccessibleAccountCodes(db, userId || 0, suspenseDate);
+  if (accessible !== null) {
+    const allowed = new Set(accessible);
+    accounts = accounts.filter(a => allowed.has(a.account_code as string));
+    if (accounts.length === 0) {
+      return NextResponse.json({ error: "您沒有可立暫收的帳號（請確認帳號維護權限）" }, { status: 403 });
+    }
+  }
 
   const prevDate = getPrevBusinessDay(suspenseDate);
 
@@ -246,10 +276,14 @@ export async function DELETE(request: NextRequest) {
   const db = initDb();
   const url = new URL(request.url);
   const batchNo = url.searchParams.get("batchNo");
+  const userId = parseInt(url.searchParams.get("userId") || "0");
 
   if (!batchNo) {
     return NextResponse.json({ error: "批號必填" }, { status: 400 });
   }
+
+  const ownErr = ensureBatchOwnership(db, batchNo, userId);
+  if (ownErr) return NextResponse.json({ error: ownErr }, { status: 403 });
 
   // 檢查是否已確認
   const confirmed = db.prepare(`
@@ -293,6 +327,27 @@ export async function DELETE(request: NextRequest) {
     message: `批號 ${batchNo} 已刪除，共 ${count} 筆`,
     count,
   });
+}
+
+/**
+ * 確認使用者有權操作整批：經辦需該批所有帳號皆為其可維護範圍，否則回傳錯誤訊息；主管不限。
+ */
+export function ensureBatchOwnership(
+  db: ReturnType<typeof getDb>,
+  batchNo: string,
+  userId: number
+): string | null {
+  const refRow = db.prepare("SELECT suspense_date FROM suspense_transactions WHERE batch_no = ? LIMIT 1").get(batchNo) as { suspense_date: string } | undefined;
+  const accessible = getAccessibleAccountCodes(db, userId, refRow?.suspense_date);
+  if (accessible === null) return null; // 主管
+
+  const accounts = db.prepare("SELECT DISTINCT account_code FROM suspense_transactions WHERE batch_no = ?").all(batchNo) as Array<{ account_code: string }>;
+  const allowed = new Set(accessible);
+  const denied = accounts.filter(a => !allowed.has(a.account_code));
+  if (denied.length > 0) {
+    return "此批號包含您無權維護的帳號，無法操作";
+  }
+  return null;
 }
 
 function getPrevBusinessDay(dateStr: string): string {

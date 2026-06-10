@@ -1,7 +1,8 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { SUSPENSE_TYPE_MAP, type SuspenseTransaction, type BatchConfirmation } from "@/lib/types";
+import { useUser } from "@/components/UserProvider";
 
 function formatNumber(val: number, currency: string = "NTD"): string {
   if (currency === "NTD") return val.toLocaleString("en-US", { minimumFractionDigits: 0 });
@@ -33,10 +34,12 @@ function isAnomaly(tx: SuspenseTransaction): boolean {
 }
 
 export default function SuspensePage() {
+  const { currentUser } = useUser();
+
   // 查詢條件（純輸入，不與結果連動）
   const [suspenseDate, setSuspenseDate] = useState("2023-10-27");
   const [suspenseType, setSuspenseType] = useState("ALL");
-  const [currency, setCurrency] = useState("ALL");
+  const [currency, setCurrency] = useState("NTD");
   const [batchNo, setBatchNo] = useState("20231027001");
 
   // 已載入的批號卡片清單
@@ -55,13 +58,20 @@ export default function SuspensePage() {
     const params = new URLSearchParams();
     if (qDate) params.set("suspenseDate", qDate);
     if (qType !== "ALL") params.set("suspenseType", qType);
-    if (qCurrency !== "ALL") params.set("currency", qCurrency);
+    params.set("currency", qCurrency);
     params.set("batchNo", qBatchNo);
+    if (currentUser) params.set("userId", String(currentUser.id));
     const res = await fetch(`/api/suspense-transactions?${params}`);
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || "查詢失敗");
     return data as { transactions: SuspenseTransaction[]; batchConfirmation: BatchConfirmation | null; total: number };
-  }, []);
+  }, [currentUser]);
+
+  // 切換操作者時清空已載入卡片，避免顯示前一位使用者的資料
+  useEffect(() => {
+    setBatches([]);
+    setEditedAmounts({});
+  }, [currentUser?.id]);
 
   // 新增或更新一張卡片（以批號為 key；已存在則就地更新，保留展開狀態）
   const upsertCard = useCallback((card: Omit<BatchCard, "expanded"> & { expanded?: boolean }) => {
@@ -79,6 +89,10 @@ export default function SuspensePage() {
   const handleQuery = useCallback(async () => {
     if (!batchNo) {
       showMessage("error", "批號必填");
+      return;
+    }
+    if (currency === "ALL") {
+      showMessage("error", "請選擇單一幣別（同一批號僅限單一幣別）");
       return;
     }
     setLoading(true);
@@ -108,7 +122,7 @@ export default function SuspensePage() {
 
   const handleAdd = useCallback(async () => {
     if (!suspenseDate || suspenseType === "ALL" || currency === "ALL") {
-      showMessage("error", "新增時需指定暫收日期、暫收類型、幣別");
+      showMessage("error", "新增時需指定暫收日期、暫收類型、單一幣別");
       return;
     }
     setLoading(true);
@@ -121,6 +135,7 @@ export default function SuspensePage() {
           suspenseType,
           currency,
           batchNo: batchNo || undefined,
+          userId: currentUser?.id,
         }),
       });
       const data = await res.json();
@@ -146,7 +161,7 @@ export default function SuspensePage() {
     } finally {
       setLoading(false);
     }
-  }, [suspenseDate, suspenseType, currency, batchNo, fetchBatch, upsertCard, showMessage]);
+  }, [suspenseDate, suspenseType, currency, batchNo, currentUser, fetchBatch, upsertCard, showMessage]);
 
   // 重新載入指定卡片
   const refreshCard = useCallback(async (card: BatchCard) => {
@@ -208,7 +223,7 @@ export default function SuspensePage() {
     if (!confirm(`確定要刪除批號 ${card.batchNo} 的所有暫收交易資料？`)) return;
     setLoading(true);
     try {
-      const res = await fetch(`/api/suspense-transactions?batchNo=${card.batchNo}`, { method: "DELETE" });
+      const res = await fetch(`/api/suspense-transactions?batchNo=${card.batchNo}&userId=${currentUser?.id ?? ""}`, { method: "DELETE" });
       const data = await res.json();
       if (!res.ok) {
         showMessage("error", data.error);
@@ -221,7 +236,7 @@ export default function SuspensePage() {
     } finally {
       setLoading(false);
     }
-  }, [showMessage]);
+  }, [currentUser, showMessage]);
 
   const handleConfirmToggle = useCallback(async (card: BatchCard) => {
     const isConfirmed = card.batchConfirmation?.confirm_status === "CONFIRMED";
@@ -238,7 +253,8 @@ export default function SuspensePage() {
           suspenseDate: firstTx?.suspense_date || card.suspenseDate,
           currency: firstTx?.currency || card.currency,
           batchType: firstTx?.suspense_type || card.suspenseType,
-          operator: "User",
+          operator: currentUser?.user_name || "User",
+          userId: currentUser?.id,
         }),
       });
       const data = await res.json();
@@ -253,7 +269,7 @@ export default function SuspensePage() {
     } finally {
       setLoading(false);
     }
-  }, [refreshCard, showMessage]);
+  }, [currentUser, refreshCard, showMessage]);
 
   const toggleExpand = useCallback((batchNo: string) => {
     setBatches(prev => prev.map(b => b.batchNo === batchNo ? { ...b, expanded: !b.expanded } : b));
@@ -271,6 +287,20 @@ export default function SuspensePage() {
           </p>
           <h2 className="text-2xl font-bold text-[#1b1b1e]">暫收交易作業</h2>
           <p className="text-sm text-[#7a7d85] mt-1">依銀行存摺餘額與公司帳列餘額之差額辦理立暫收，並進行批號確認與傳票產生。</p>
+          {currentUser && (
+            <div className={`mt-2 inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium ${
+              currentUser.role === "MANAGER"
+                ? "bg-[#ede9fe] text-[#6d28d9]"
+                : "bg-[#dbeafe] text-[#1d4ed8]"
+            }`}>
+              <span className="material-symbols-outlined text-[14px]">
+                {currentUser.role === "MANAGER" ? "visibility" : "person"}
+              </span>
+              {currentUser.role === "MANAGER"
+                ? `${currentUser.user_name}（主管）：可檢視與操作所有帳號及批號`
+                : `${currentUser.user_name}（經辦）：僅顯示與操作您負責的帳號`}
+            </div>
+          )}
         </div>
         {message && (
           <div className={`flex items-center gap-2 p-3 border rounded-lg text-sm shadow-sm ${
@@ -323,7 +353,6 @@ export default function SuspensePage() {
               onChange={e => setCurrency(e.target.value)}
               className="w-full border border-[#d8dbe3] rounded-lg focus:border-[#2563EB] focus:ring-2 focus:ring-[#2563EB]/20 text-sm h-10 px-3 bg-white outline-none transition"
             >
-              <option value="ALL">全部幣別</option>
               <option value="NTD">新台幣 (NTD)</option>
               <option value="USD">美元 (USD)</option>
               <option value="EUR">歐元 (EUR)</option>

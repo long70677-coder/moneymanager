@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 import { Noto_Sans_TC } from "next/font/google";
 import "./globals.css";
+import { UserProvider } from "@/components/UserProvider";
+import UserSwitcher from "@/components/UserSwitcher";
 
 const notoSansTC = Noto_Sans_TC({
   subsets: ["latin"],
@@ -34,6 +36,7 @@ export default function RootLayout({
         />
       </head>
       <body className="min-h-screen flex flex-col bg-[#f7f8fb] text-[#1b1b1e]">
+        <UserProvider>
         {/* 側邊導覽列 */}
         <nav className="bg-gradient-to-b from-[#0a1f44] to-[#031635] text-[#dde2f4] h-screen w-64 fixed left-0 top-0 flex flex-col z-20 shadow-xl">
           <div className="px-6 py-5 border-b border-white/10 flex items-center gap-3">
@@ -93,19 +96,12 @@ export default function RootLayout({
               <span className="material-symbols-outlined">notifications</span>
               <span className="absolute top-0 right-0 w-2 h-2 bg-[#ba1a1a] rounded-full ring-2 ring-white"></span>
             </button>
-            <div className="flex items-center gap-2 pl-3 border-l border-[#e6e8ef]">
-              <div className="w-9 h-9 rounded-full bg-gradient-to-br from-[#1a2b4b] to-[#2563EB] flex items-center justify-center text-white text-xs font-bold">
-                資管
-              </div>
-              <div className="hidden lg:block leading-tight">
-                <p className="text-sm font-medium text-[#1b1b1e]">資金管理課</p>
-                <p className="text-[11px] text-[#7a7d85]">經辦人員</p>
-              </div>
-            </div>
+            <UserSwitcher />
           </div>
         </header>
 
         {children}
+        </UserProvider>
       </body>
     </html>
   );

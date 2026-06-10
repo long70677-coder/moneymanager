@@ -66,3 +66,15 @@ export const SUSPENSE_TYPE_MAP: Record<string, string> = {
   MANUAL: "手工暫收",
   SECONDARY: "二次暫收",
 };
+
+export interface User {
+  id: number;
+  user_code: string;
+  user_name: string;
+  role: "STAFF" | "MANAGER";
+}
+
+export const ROLE_MAP: Record<string, string> = {
+  STAFF: "經辦",
+  MANAGER: "主管",
+};

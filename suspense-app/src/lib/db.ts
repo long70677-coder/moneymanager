@@ -137,10 +137,80 @@ function initSchema(db: Database.Database) {
       counter_key TEXT UNIQUE NOT NULL,
       current_value INTEGER DEFAULT 0
     );
+
+    CREATE TABLE IF NOT EXISTS users (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_code TEXT UNIQUE NOT NULL,
+      user_name TEXT NOT NULL,
+      role TEXT NOT NULL DEFAULT 'STAFF',
+      created_at TEXT DEFAULT (datetime('now'))
+    );
+
+    CREATE TABLE IF NOT EXISTS account_managers (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      account_code TEXT NOT NULL,
+      user_id INTEGER NOT NULL,
+      manager_type TEXT NOT NULL DEFAULT 'PRIMARY',
+      valid_from TEXT,
+      valid_to TEXT,
+      created_at TEXT DEFAULT (datetime('now')),
+      UNIQUE(account_code, user_id, manager_type),
+      FOREIGN KEY (account_code) REFERENCES bank_accounts(account_code),
+      FOREIGN KEY (user_id) REFERENCES users(id)
+    );
   `);
 }
 
+/**
+ * 取得使用者可存取的帳號短碼清單。
+ * - 主管（MANAGER）回傳 null，代表「全部帳號」不加任何過濾。
+ * - 經辦（STAFF）回傳其主辦/代理且於 refDate 仍有效的帳號短碼陣列。
+ * - 查無使用者回傳空陣列（看不到任何帳號）。
+ */
+export function getAccessibleAccountCodes(
+  db: Database.Database,
+  userId: number,
+  refDate?: string
+): string[] | null {
+  const user = db.prepare("SELECT role FROM users WHERE id = ?").get(userId) as { role: string } | undefined;
+  if (!user) return [];
+  if (user.role === "MANAGER") return null;
+
+  const ref = refDate || new Date().toISOString().split("T")[0];
+  const rows = db.prepare(`
+    SELECT DISTINCT account_code FROM account_managers
+    WHERE user_id = ?
+      AND (valid_from IS NULL OR valid_from <= ?)
+      AND (valid_to   IS NULL OR valid_to   >= ?)
+  `).all(userId, ref, ref) as Array<{ account_code: string }>;
+  return rows.map(r => r.account_code);
+}
+
 export function seedData(db: Database.Database) {
+  // 使用者與帳號權限（獨立 seed，既有 DB 也會補齊）
+  const userCount = db.prepare("SELECT COUNT(*) as cnt FROM users").get() as { cnt: number };
+  if (userCount.cnt === 0) {
+    const insertUser = db.prepare("INSERT OR IGNORE INTO users (user_code, user_name, role) VALUES (?, ?, ?)");
+    const insertManager = db.prepare(`
+      INSERT OR IGNORE INTO account_managers (account_code, user_id, manager_type, valid_from, valid_to)
+      VALUES (?, (SELECT id FROM users WHERE user_code = ?), ?, ?, ?)
+    `);
+    db.transaction(() => {
+      insertUser.run("U001", "王小明", "STAFF");
+      insertUser.run("U002", "李美華", "STAFF");
+      insertUser.run("U003", "陳主管", "MANAGER");
+
+      // 主辦（PRIMARY，永久有效）
+      insertManager.run("ACT-001", "U001", "PRIMARY", null, null);
+      insertManager.run("ACT-002", "U001", "PRIMARY", null, null);
+      insertManager.run("ACT-089", "U002", "PRIMARY", null, null);
+      insertManager.run("ACT-102", "U002", "PRIMARY", null, null);
+      insertManager.run("ACT-103", "U002", "PRIMARY", null, null);
+      // 代理（AGENT，限期有效）：王小明代理李美華的 ACT-089
+      insertManager.run("ACT-089", "U001", "AGENT", "2023-10-01", "2023-12-31");
+    })();
+  }
+
   const accountCount = db.prepare("SELECT COUNT(*) as cnt FROM bank_accounts").get() as { cnt: number };
   if (accountCount.cnt > 0) return;
 

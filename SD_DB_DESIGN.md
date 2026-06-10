@@ -16,6 +16,12 @@
 | 5 | `voucher_entries` | 傳票明細檔 | 會計介接 | ✅ 已實作 |
 | 6 | `report_details` | 通報明細檔 | 通報介接 | ✅ 已實作 |
 | 7 | `sequence_counters` | 自動跳號表 | 共用基礎 | ✅ 已實作 |
+| 8 | `users` | 使用者 | 權限控制 | ✅ 已實作 |
+| 9 | `account_managers` | 帳號維護人員（主辦/代理） | 權限控制 | ✅ 已實作 |
+
+> **業務規則：單一批號僅限單一幣別** — 批號自動跳號以「類型＋日期＋幣別」為 key，後端於新增時拒絕同批號混用不同幣別，查詢亦要求指定單一幣別。
+>
+> **權限模型** — 使用者分 `STAFF`（經辦）與 `MANAGER`（主管）。經辦僅能檢視/操作其於 `account_managers` 中主辦或代理（且代理期間有效）的帳號；主管不受限。立暫收新增、查詢、批號確認/取消確認、刪除皆套用此範圍。（目前以「目前操作者切換器」作為登入機制的 demo 替身。）
 
 ---
 
@@ -31,11 +37,15 @@ suspense_transactions ──(batch_no 邏輯對應)── batch_confirmations
         └─ 批號確認 ─→ report_details（通報，僅日常暫收 DAILY）
 
 sequence_counters ── 提供 batch_no 自動跳號（counter_key = BATCH_{type}_{yyyymmdd}_{currency}）
+
+bank_accounts ──< account_managers >── users   (account_code FK / user_id FK；主辦 PRIMARY、代理 AGENT)
 ```
 
-實體外鍵（FK）目前僅 2 條：
+實體外鍵（FK）目前 4 條：
 - `passbook_balances.account_code` → `bank_accounts.account_code`
 - `suspense_transactions.account_code` → `bank_accounts.account_code`
+- `account_managers.account_code` → `bank_accounts.account_code`
+- `account_managers.user_id` → `users.id`
 
 其餘（voucher / report / batch_confirmation）皆以 `batch_no` 邏輯關聯，未建實體 FK。
 
@@ -169,6 +179,31 @@ sequence_counters ── 提供 batch_no 自動跳號（counter_key = BATCH_{typ
 | counter_key | TEXT UNIQUE NOT NULL | 跳號鍵，格式 `BATCH_{type}_{yyyymmdd}_{currency}` |
 | current_value | INTEGER DEFAULT 0 | 目前號碼 |
 
+### 8. `users`（使用者）
+
+| 欄位 | 型別 | 鍵/約束 | 說明 |
+|------|------|---------|------|
+| id | INTEGER | PK | 流水號 |
+| user_code | TEXT | UNIQUE, NOT NULL | 使用者代號 |
+| user_name | TEXT | NOT NULL | 姓名 |
+| role | TEXT | NOT NULL DEFAULT 'STAFF' | 角色：STAFF（經辦）/ MANAGER（主管） |
+| created_at | TEXT | | 建立時間 |
+
+### 9. `account_managers`（帳號維護人員）
+
+| 欄位 | 型別 | 鍵/約束 | 說明 |
+|------|------|---------|------|
+| id | INTEGER | PK | 流水號 |
+| account_code | TEXT | NOT NULL, FK→bank_accounts | 帳號短碼 |
+| user_id | INTEGER | NOT NULL, FK→users | 使用者 |
+| manager_type | TEXT | NOT NULL DEFAULT 'PRIMARY' | PRIMARY（主辦）/ AGENT（代理） |
+| valid_from | TEXT | | 代理生效日（NULL=不限） |
+| valid_to | TEXT | | 代理截止日（NULL=不限） |
+| created_at | TEXT | | 建立時間 |
+| — | — | **UNIQUE(account_code, user_id, manager_type)** | 唯一鍵 |
+
+> 權限判斷對應 SA「同時考量主維護人 + 代理維護人 + 代理有效期間」。`getAccessibleAccountCodes(db, userId, refDate)` 依參考日期（暫收日期）回傳可存取帳號；主管回傳 null（全部）。
+
 ---
 
 ## 四、與 SA 規格的落差清單（待 SA / 業務決策）
@@ -180,7 +215,7 @@ sequence_counters ── 提供 batch_no 自動跳號（counter_key = BATCH_{typ
 | 3 | **實體 FK 僅 2 條** | voucher/report/batch_confirmation 靠 batch_no 邏輯關聯 | 評估是否補實體 FK 或維持邏輯關聯 |
 | 4 | **batch_type 定義** | 直接存暫收類型，對應 SA 待確認議題第 8 點 | 明確定義批號類型編碼規則，避免 key 衝突 |
 | 5 | **會計科目 / 通報項目寫死** | 科目 1131/1132/2141/2142、通報 item_code 寫死於程式 | 建科目對照表與通報項目 mapping3 |
-| 6 | **代理維護權限表未建** | SA「權限與帳號可維護範圍控制模組」無對應資料表 | 建帳號維護人員 / 代理維護設定表 |
+| 6 | ~~代理維護權限表未建~~ | ✅ 已補：`users` + `account_managers`（主辦/代理/有效期間），並套用於查詢、新增、確認、刪除 | 後續接真實登入機制取代切換器 |
 | 7 | **沖暫收未納入** | 本期結構未含沖暫收 | 確認是否本期保留資料結構或不做 |
 
 ---

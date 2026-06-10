@@ -1,15 +1,25 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getDb, seedData } from "@/lib/db";
+import { getDb, seedData, getAccessibleAccountCodes } from "@/lib/db";
 
 // 取消批號確認
 export async function POST(request: NextRequest) {
   const db = getDb();
   seedData(db);
   const body = await request.json();
-  const { batchNo, operator } = body;
+  const { batchNo, suspenseDate, operator, userId } = body;
 
   if (!batchNo) {
     return NextResponse.json({ error: "批號必填" }, { status: 400 });
+  }
+
+  // 權限：經辦需該批所有帳號皆為其可維護範圍
+  const accessible = getAccessibleAccountCodes(db, userId || 0, suspenseDate);
+  if (accessible !== null) {
+    const allowed = new Set(accessible);
+    const accts = db.prepare("SELECT DISTINCT account_code FROM suspense_transactions WHERE batch_no = ?").all(batchNo) as Array<{ account_code: string }>;
+    if (accts.some(a => !allowed.has(a.account_code))) {
+      return NextResponse.json({ error: "此批號包含您無權維護的帳號，無法取消確認" }, { status: 403 });
+    }
   }
 
   // 檢查是否已日結
