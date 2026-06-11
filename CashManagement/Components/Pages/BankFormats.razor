@@ -51,7 +51,7 @@
                 <label class="text-xs font-medium text-[#44474e]">解析引擎</label>
                 <select @bind="form.Engine" class="@Inp">
                     <option value="DELIMITED">分隔檔</option>
-                    <option value="FIXED_WIDTH">固定寬度（未支援）</option>
+                    <option value="FIXED_WIDTH">固定寬度（定長）</option>
                     <option value="EXCEL">Excel（未支援）</option>
                 </select>
             </div>
@@ -59,27 +59,30 @@
                 <label class="text-xs font-medium text-[#44474e]">編碼</label>
                 <select @bind="form.Encoding" class="@Inp">
                     <option value="UTF-8">UTF-8</option>
-                    <option value="BIG5">BIG5（未支援）</option>
+                    <option value="BIG5">BIG5（CP950）</option>
                 </select>
             </div>
+            @if (!IsFixedWidth)
+            {
+                <div class="flex flex-col gap-1.5">
+                    <label class="text-xs font-medium text-[#44474e]">分隔符</label>
+                    <input @bind="form.Delimiter" class="@Inp" />
+                </div>
+            }
             <div class="flex flex-col gap-1.5">
-                <label class="text-xs font-medium text-[#44474e]">分隔符</label>
-                <input @bind="form.Delimiter" class="@Inp" />
-            </div>
-            <div class="flex flex-col gap-1.5">
-                <label class="text-xs font-medium text-[#44474e]">略過表頭行數</label>
+                <label class="text-xs font-medium text-[#44474e]">@(IsFixedWidth ? "略過前置行數" : "略過表頭行數")</label>
                 <input type="number" @bind="form.SkipRows" class="@Inp" />
             </div>
             <div class="flex flex-col gap-1.5">
                 <label class="text-xs font-medium text-[#44474e]">日期格式</label>
-                <input @bind="form.DateFormat" class="@Inp" placeholder="YYYY-MM-DD 或 YYY/MM/DD(民國)" />
+                <input @bind="form.DateFormat" class="@Inp" placeholder="YYYY-MM-DD / YYYMMDD(民國) / YYYYMMDD" />
             </div>
         </div>
 
         <div class="border border-[#e6e8ef] rounded-xl p-4 bg-[#fafbfd]">
             <p class="text-xs font-semibold text-[#475569] mb-3 flex items-center gap-1.5">
                 <span class="material-symbols-outlined text-[16px] text-[#2563EB]">swap_horiz</span>
-                欄位對應（以欄名或欄序對應到目標欄位）
+                @(IsFixedWidth ? "欄位對應（填各欄起迄位置，1 起算、含頭含尾、以位元組計）" : "欄位對應（以欄名或欄序對應到目標欄位）")
             </p>
             <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
                 @foreach (var field in cmFields)
@@ -87,12 +90,16 @@
                     var cm = form.Cm[field.Key];
                     <div class="flex items-center gap-2 bg-white border border-[#e6e8ef] rounded-lg px-3 py-2">
                         <span class="w-20 text-xs font-medium text-[#475569] shrink-0">@field.Label</span>
-                        <select @bind="cm.By" class="form-input h-8 w-auto px-2 text-xs">
-                            <option value="name">欄名</option>
-                            <option value="index">欄序</option>
-                        </select>
-                        <input @bind="cm.Key" class="form-input h-8 flex-1 px-2 min-w-0"
-                               placeholder="@(cm.By == "index" ? "0,1,2…" : "欄位名稱")" />
+                        @if (IsFixedWidth)
+                        {
+                            <span class="text-xs text-[#94a3b8] shrink-0">起迄</span>
+                            <input @bind="cm.Key" class="form-input h-8 flex-1 px-2 min-w-0" placeholder="例 1-8" />
+                        }
+                        else
+                        {
+                            <span class="text-xs text-[#94a3b8] shrink-0">欄序</span>
+                            <input @bind="cm.Key" class="form-input h-8 flex-1 px-2 min-w-0" placeholder="第幾欄，0 起算（如 0,1,2…）" />
+                        }
                     </div>
                 }
             </div>
@@ -189,7 +196,7 @@
 
     private class ColRefForm
     {
-        public string By { get; set; } = "name";
+        public string By { get; set; } = "index";
         public string Key { get; set; } = "";
     }
 
@@ -208,14 +215,16 @@
 
         public static Dictionary<string, ColRefForm> NewCm() => new()
         {
-            ["balanceDate"] = new ColRefForm { Key = "餘額日期" },
-            ["accountCode"] = new ColRefForm { Key = "帳號" },
-            ["currency"] = new ColRefForm { Key = "幣別" },
-            ["balance"] = new ColRefForm { Key = "餘額" },
+            ["balanceDate"] = new ColRefForm(),
+            ["accountCode"] = new ColRefForm(),
+            ["currency"] = new ColRefForm(),
+            ["balance"] = new ColRefForm(),
         };
     }
 
     private FormModel form = new();
+
+    private bool IsFixedWidth => form.Engine == "FIXED_WIDTH";
 
     private readonly (string Key, string Label)[] cmFields =
     [
@@ -286,12 +295,17 @@
             if (string.IsNullOrWhiteSpace(form.Cm["balanceDate"].Key) || string.IsNullOrWhiteSpace(form.Cm["balance"].Key))
                 throw new BusinessException("欄位對應至少需設定「餘額日期」與「餘額」");
 
+            var fixedWidth = IsFixedWidth;
+            if (fixedWidth)
+                foreach (var kv in form.Cm.Where(kv => !string.IsNullOrWhiteSpace(kv.Value.Key)))
+                    ValidateRange(kv.Value.Key);
+
             var columnMapJson = JsonSerializer.Serialize(form.Cm.ToDictionary(
                 kv => kv.Key,
                 kv => new Dictionary<string, object>
                 {
-                    ["by"] = kv.Value.By,
-                    ["key"] = kv.Value.By == "index" && int.TryParse(kv.Value.Key, out var n) ? n : kv.Value.Key,
+                    ["by"] = fixedWidth ? "range" : "index",
+                    ["key"] = !fixedWidth && int.TryParse(kv.Value.Key, out var n) ? n : kv.Value.Key,
                 }));
 
             var p = new BankFormatProfile
@@ -336,6 +350,15 @@
         {
             Show("error", e.Message);
         }
+    }
+
+    private static void ValidateRange(string spec)
+    {
+        var parts = spec.Split('-', StringSplitOptions.TrimEntries);
+        if (parts.Length != 2
+            || !int.TryParse(parts[0], out var from) || !int.TryParse(parts[1], out var to)
+            || from < 1 || to < from)
+            throw new BusinessException($"起迄位置格式錯誤：{spec}（應為「起-迄」，1 起算且起≤迄，如 1-8）");
     }
 
     private static string StatusLabel(string s) => s switch

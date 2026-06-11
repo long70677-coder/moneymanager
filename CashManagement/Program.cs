@@ -1,8 +1,12 @@
+using System.Text;
 using CashManagement.Components;
 using CashManagement.Data;
 using CashManagement.Services;
 using CashManagement.Services.Master;
 using Microsoft.EntityFrameworkCore;
+
+// 註冊 CodePages 編碼供應器，啟用 BIG5(CP950) 等非 UTF-8 編碼（銀行定長檔常用）
+Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
 
 var builder = WebApplication.CreateBuilder(args);
 

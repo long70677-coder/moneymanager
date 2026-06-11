@@ -9,24 +9,52 @@ public static partial class MappingHelper
     [GeneratedRegex(@"^(\d{2,4})[-/](\d{1,2})[-/](\d{1,2})$")]
     private static partial Regex DateRegex();
 
-    private const string FullWidth = "０１２３４５６７８９．，（）－";
-    private const string HalfWidth = "0123456789.,()-";
+    [GeneratedRegex(@"^\d{6,8}$")]
+    private static partial Regex CompactDateRegex();
 
-    /// <summary>解析日期 → ISO yyyy-MM-dd。支援西元 YYYY-MM-DD / YYYY/MM/DD 與民國 YYY/MM/DD。</summary>
+    private const string FullWidth = "０１２３４５６７８９．，（）－／";
+    private const string HalfWidth = "0123456789.,()-/";
+
+    /// <summary>全形數字/符號 → 半形。</summary>
+    private static string ToHalfWidth(string v) => new(v.Select(c =>
+    {
+        var idx = FullWidth.IndexOf(c);
+        return idx >= 0 ? HalfWidth[idx] : c;
+    }).ToArray());
+
+    /// <summary>
+    /// 解析日期 → ISO yyyy-MM-dd。支援：
+    /// 有分隔符 西元 YYYY-MM-DD / YYYY/MM/DD、民國 YYY/MM/DD；
+    /// 緊湊無分隔符 YYYYMMDD(8碼西元) / YYYMMDD(7碼民國) / YYMMDD(6碼民國)。
+    /// </summary>
     public static string? ParseDate(string? raw, string? format)
     {
         if (string.IsNullOrWhiteSpace(raw)) return null;
-        var m = DateRegex().Match(raw.Trim());
-        if (!m.Success) return null;
+        var s = ToHalfWidth(raw.Trim());
 
-        var year = int.Parse(m.Groups[1].Value);
-        var mon = int.Parse(m.Groups[2].Value);
-        var day = int.Parse(m.Groups[3].Value);
-
-        // 民國年判斷：格式明示三位年(YYY 而非 YYYY)、或無格式且年份為 2-3 位、或年份 < 1911
+        // 格式明示三位年(YYY 而非 YYYY) → 民國
         var fmtRoc = !string.IsNullOrEmpty(format) && format.Contains("YYY") && !format.Contains("YYYY");
-        var isRoc = fmtRoc || (string.IsNullOrEmpty(format) && m.Groups[1].Value.Length <= 3) || year < 1911;
-        if (isRoc) year += 1911;
+
+        int year, mon, day;
+        var m = DateRegex().Match(s);
+        if (m.Success)
+        {
+            year = int.Parse(m.Groups[1].Value);
+            mon = int.Parse(m.Groups[2].Value);
+            day = int.Parse(m.Groups[3].Value);
+            var isRoc = fmtRoc || (string.IsNullOrEmpty(format) && m.Groups[1].Value.Length <= 3) || year < 1911;
+            if (isRoc) year += 1911;
+        }
+        else if (CompactDateRegex().IsMatch(s))
+        {
+            // 緊湊格式：末 4 碼固定為 MMDD，其餘為年（8碼→西元、7/6碼→民國）
+            var yLen = s.Length - 4;
+            year = int.Parse(s[..yLen]);
+            mon = int.Parse(s.Substring(yLen, 2));
+            day = int.Parse(s.Substring(yLen + 2, 2));
+            if (fmtRoc || yLen < 4 || year < 1911) year += 1911;
+        }
+        else return null;
 
         if (mon is < 1 or > 12 || day is < 1 or > 31) return null;
         return $"{year:0000}-{mon:00}-{day:00}";
@@ -36,16 +64,8 @@ public static partial class MappingHelper
     public static decimal? ParseAmount(string? raw, AmountFormat? fmt)
     {
         if (raw == null) return null;
-        var v = raw.Trim();
+        var v = ToHalfWidth(raw.Trim());
         if (v.Length == 0) return null;
-
-        // 全形 → 半形
-        var chars = v.Select(c =>
-        {
-            var idx = FullWidth.IndexOf(c);
-            return idx >= 0 ? HalfWidth[idx] : c;
-        });
-        v = new string(chars.ToArray());
 
         var negative = false;
         if (fmt?.ParenthesesNegative != false && v.StartsWith('(') && v.EndsWith(')'))
