@@ -57,6 +57,26 @@ public static class DbSeeder
             db.SaveChanges();
         }
 
+        if (!db.Currencies.Any())
+        {
+            db.Currencies.AddRange(
+                new Currency { Code = "NTD", Name = "新台幣", CurrencyType = "TWD", DecimalPlaces = 0 },
+                new Currency { Code = "USD", Name = "美元" },
+                new Currency { Code = "EUR", Name = "歐元" },
+                new Currency { Code = "JPY", Name = "日圓", DecimalPlaces = 0 });
+
+            // 匯率沿用 demo 交易既有值（USD 31.5），日期早於 demo 交易日使「以前最近一筆」查得到
+            db.ExchangeRates.AddRange(
+                new ExchangeRate { RateDate = "2023-10-01", CurrencyCode = "USD", Rate = 31.5m },
+                new ExchangeRate { RateDate = "2023-10-01", CurrencyCode = "EUR", Rate = 34.2m },
+                new ExchangeRate { RateDate = "2023-10-01", CurrencyCode = "JPY", Rate = 0.215m });
+
+            db.Holidays.AddRange(
+                new Holiday { HolidayDate = "2026-01-01", Name = "元旦" },
+                new Holiday { HolidayDate = "2026-02-28", Name = "和平紀念日" });
+            db.SaveChanges();
+        }
+
         // 帳號轉檔檔名：缺者補（demo 以「帳號短碼.csv」）
         foreach (var a in db.BankAccounts.Where(a => a.ImportFileName == null))
             a.ImportFileName = a.AccountCode + ".csv";

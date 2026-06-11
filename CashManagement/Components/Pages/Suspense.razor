@@ -1,5 +1,6 @@
 @page "/suspense"
 @inject SuspenseService SuspenseSvc
+@inject MasterDataService MasterData
 @inject CurrentUserState UserState
 @inject IJSRuntime JS
 @implements IDisposable
@@ -50,10 +51,10 @@
         <div class="flex flex-col gap-1.5">
             <label class="text-xs font-medium text-[#44474e]">幣別</label>
             <select @bind="currency" class="@Inp">
-                <option value="NTD">新台幣 (NTD)</option>
-                <option value="USD">美元 (USD)</option>
-                <option value="EUR">歐元 (EUR)</option>
-                <option value="JPY">日圓 (JPY)</option>
+                @foreach (var c in currencies)
+                {
+                    <option value="@c.Code">@c.Name (@c.Code)</option>
+                }
             </select>
         </div>
         <div class="flex flex-col gap-1.5">
@@ -244,10 +245,10 @@ else
     private const string BtnPrimary = "btn btn-primary";
     private const string BtnSecondary = "btn btn-secondary";
 
-    private static readonly Dictionary<string, string> CurrencyNames = new()
-    {
-        ["NTD"] = "新台幣", ["USD"] = "美元", ["EUR"] = "歐元", ["JPY"] = "日圓",
-    };
+    // 幣別名稱/小數位由幣別主檔（/master/currencies）供應
+    private List<Data.Currency> currencies = [];
+    private Dictionary<string, string> CurrencyNames = [];
+    private Dictionary<string, int> currencyDecimals = [];
 
     private class BatchCard(BatchData data)
     {
@@ -268,6 +269,10 @@ else
     protected override void OnInitialized()
     {
         UserState.OnChange += HandleUserChanged;
+        currencies = MasterData.GetActiveCurrencies();
+        CurrencyNames = currencies.ToDictionary(c => c.Code, c => c.Name);
+        currencyDecimals = currencies.ToDictionary(c => c.Code, c => c.DecimalPlaces);
+        if (currencies.Count > 0 && !currencyDecimals.ContainsKey(currency)) currency = currencies[0].Code;
         LoadBatchNoOptions();
     }
 
@@ -317,8 +322,8 @@ else
         || (tx.SuspenseType == "DAILY" && tx.PrevPassbookBalance == 0)
         || (tx.SuspenseType == "SECONDARY" && tx.TodayPassbookBalance == 0);
 
-    private static string FmtAmount(decimal val, string cur) =>
-        cur == "NTD" ? val.ToString("N0") : val.ToString("N2");
+    private string FmtAmount(decimal val, string cur) =>
+        val.ToString("N" + currencyDecimals.GetValueOrDefault(cur, 2));
 
     private string GetAmountText(SuspenseTransaction tx) =>
         editedAmounts.TryGetValue(tx.Id, out var v) ? v : FmtAmount(tx.SuspenseAmount, tx.Currency);

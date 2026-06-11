@@ -1,0 +1,46 @@
+@page "/master/rates"
+@inject MasterDataService MasterData
+
+<PageTitle>匯率基本資料 - 銀行存款資金管理系統</PageTitle>
+
+<PageHeader Group="基本資料" Title="匯率基本資料"
+            Description="維護外幣對記帳幣（NTD）匯率。立暫收時取「暫收日期（含）以前最近一筆」；交易留存匯率快照，修改歷史匯率不影響既有交易。" />
+
+@if (def != null)
+{
+    <MasterPage TEntity="ExchangeRate" Def="@def" />
+}
+
+@code {
+    private MasterDef<ExchangeRate>? def;
+
+    protected override void OnInitialized()
+    {
+        // 幣別選項來自幣別主檔（排除 NTD：記帳幣匯率恆為 1，不需維護）
+        var options = MasterData.GetActiveCurrencies()
+            .Where(c => c.Code != "NTD")
+            .Select(c => (c.Code, $"{c.Name} ({c.Code})"))
+            .ToArray();
+
+        def = new()
+        {
+            Title = "匯率",
+            Icon = "currency_exchange",
+            ExportName = "匯率基本資料",
+            UniqueKeyMessage = "該日期＋幣別已有匯率資料，請改用修改",
+            Fields =
+            [
+                new() { Key = "rateDate", Label = "匯率日期", Member = r => r.RateDate, Kind = FieldKind.Date,
+                        Required = true, InUniqueKey = true, Mono = true },
+                new() { Key = "currencyCode", Label = "幣別", Member = r => r.CurrencyCode, Kind = FieldKind.Select,
+                        Required = true, InUniqueKey = true, Options = options },
+                new() { Key = "rate", Label = "匯率", Member = r => r.Rate, Kind = FieldKind.Number,
+                        Required = true, Mono = true, FormHint = "1 外幣 = ? NTD" },
+            ],
+            Validate = (db, r, isNew) =>
+            {
+                if (r.Rate <= 0) throw new BusinessException("匯率必須大於 0");
+            },
+        };
+    }
+}

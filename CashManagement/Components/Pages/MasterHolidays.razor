@@ -1,0 +1,25 @@
+@page "/master/holidays"
+
+<PageTitle>假日基本資料 - 銀行存款資金管理系統</PageTitle>
+
+<PageHeader Group="基本資料" Title="假日基本資料"
+            Description="維護國定假日／補假。營業日判斷＝排除週六日與本檔日期（T-1 取前一營業日、轉檔次日推算皆引用）。" />
+
+<MasterPage TEntity="Holiday" Def="@def" />
+
+@code {
+    private static readonly MasterDef<Holiday> def = new()
+    {
+        Title = "假日",
+        Icon = "event_busy",
+        ExportName = "假日基本資料",
+        Fields =
+        [
+            new() { Key = "holidayDate", Label = "日期", Member = h => h.HolidayDate, Kind = FieldKind.Date,
+                    Required = true, InUniqueKey = true, Mono = true },
+            new() { Key = "name", Label = "假日名稱", Member = h => h.Name, Required = true,
+                    Placeholder = "例：元旦" },
+        ],
+        UniqueKeyMessage = "該日期已存在假日資料",
+    };
+}

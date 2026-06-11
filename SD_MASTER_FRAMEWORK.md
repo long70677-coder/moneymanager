@@ -26,6 +26,14 @@
 | 銀行帳號基本資料 | `/master/accounts`（`/master` 同頁） | `bank_accounts` | `MasterPage` 全宣告式 |
 | 使用者基本資料 | `/master/users` | `users` | `MasterPage` 全宣告式 |
 | 帳號維護權限 | `/master/permissions` | `account_managers` | **自訂版面**＋共用元件（主從式，見 §7） |
+| 幣別基本資料 | `/master/currencies` | `currencies` | `MasterPage` 全宣告式（軟刪除） |
+| 匯率基本資料 | `/master/rates` | `exchange_rates` | `MasterPage` 全宣告式（**動態下拉**：幣別選項於頁面 OnInitialized 由幣別主檔組入 def，示範選項不必寫死） |
+| 假日基本資料 | `/master/holidays` | `holidays` | `MasterPage` 全宣告式（最小用例：兩個欄位） |
+
+**下游接線（基本資料生效點）：**
+- 匯率：`SuspenseService.CreateBatch` 立暫收時取「暫收日期（含）以前最近一筆」，查無匯率即擋下（台幣/保單帳戶恆為 1）；交易留存匯率快照。
+- 假日：`PrevBusinessDay`／`NextBusinessDay` 排除週六日＋假日檔（T-1 取前一營業日、轉檔次日推算）。
+- 幣別：暫收（/suspense）與餘額轉檔（/balances）的幣別下拉、幣別名稱、金額小數位均由幣別主檔供應，新增幣別不再改程式。
 
 > 原唯讀頁 `/master`（Master.razor）由上述三頁取代並移除。
 > 既有「銀行格式設定 `/bank-formats`」為先前實作的手刻維護頁，本期**不**強制改寫；後續若調整可遷移至框架。

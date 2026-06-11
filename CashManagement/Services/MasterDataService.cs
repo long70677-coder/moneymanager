@@ -65,6 +65,14 @@ public class MasterDataService(IDbContextFactory<AppDbContext> factory)
             .OrderByDescending(u => u.Role).ThenBy(u => u.UserCode).ToList();
     }
 
+    /// <summary>幣別下拉共用：啟用中的幣別（本國幣排前）。匯率頁、暫收/餘額作業的幣別選單皆由此供應。</summary>
+    public List<Currency> GetActiveCurrencies()
+    {
+        using var db = factory.CreateDbContext();
+        return db.Currencies.AsNoTracking().Where(c => c.IsActive)
+            .OrderByDescending(c => c.CurrencyType).ThenBy(c => c.Code).ToList();
+    }
+
     /// <summary>指派對象下拉：啟用中的帳號。</summary>
     public List<BankAccount> GetActiveAccounts()
     {

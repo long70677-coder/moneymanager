@@ -123,7 +123,7 @@ public class IngestService(IDbContextFactory<AppDbContext> factory)
         var success = 0;
 
         // 候選暫收日期（供「已立暫收則擋覆蓋」檢核）：當日(二次) + 次營業日(日常)
-        var suspenseDates = new[] { input.ScreenBalanceDate, SuspenseService.NextBusinessDay(input.ScreenBalanceDate) };
+        var suspenseDates = new[] { input.ScreenBalanceDate, SuspenseService.NextBusinessDay(db, input.ScreenBalanceDate) };
 
         using var txn = db.Database.BeginTransaction();
         foreach (var r in records)

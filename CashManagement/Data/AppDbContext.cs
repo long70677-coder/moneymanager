@@ -13,6 +13,9 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     public DbSet<SequenceCounter> SequenceCounters => Set<SequenceCounter>();
     public DbSet<User> Users => Set<User>();
     public DbSet<AccountManager> AccountManagers => Set<AccountManager>();
+    public DbSet<Currency> Currencies => Set<Currency>();
+    public DbSet<ExchangeRate> ExchangeRates => Set<ExchangeRate>();
+    public DbSet<Holiday> Holidays => Set<Holiday>();
     public DbSet<BankFormatProfile> BankFormatProfiles => Set<BankFormatProfile>();
     public DbSet<ImportLog> ImportLogs => Set<ImportLog>();
     public DbSet<LedgerBalance> LedgerBalances => Set<LedgerBalance>();
@@ -36,6 +39,10 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
 
         b.Entity<AccountManager>()
             .HasIndex(x => new { x.AccountCode, x.UserId, x.ManagerType }).IsUnique();
+
+        b.Entity<Currency>().HasIndex(x => x.Code).IsUnique();
+        b.Entity<ExchangeRate>().HasIndex(x => new { x.RateDate, x.CurrencyCode }).IsUnique();
+        b.Entity<Holiday>().HasIndex(x => x.HolidayDate).IsUnique();
 
         b.Entity<BankFormatProfile>()
             .HasIndex(x => new { x.BankCode, x.Currency, x.Version }).IsUnique();

@@ -126,7 +126,19 @@ public class SuspenseService(IDbContextFactory<AppDbContext> factory)
                 throw new BusinessException("您沒有可立暫收的帳號（請確認帳號維護權限）");
         }
 
-        var prevDate = PrevBusinessDay(suspenseDate);
+        var prevDate = PrevBusinessDay(db, suspenseDate);
+        // 匯率：取暫收日期（含）以前最近一筆（SA：匯率取暫收日期以前最近一筆有效資料）；
+        // 台幣與保單帳戶恆為 1，於迴圈內判斷。查無匯率即擋下，避免以錯誤匯率立帳。
+        decimal? fxRate = null;
+        if (currency != "NTD")
+        {
+            fxRate = db.ExchangeRates.AsNoTracking()
+                .Where(r => r.CurrencyCode == currency && string.Compare(r.RateDate, suspenseDate) <= 0)
+                .OrderByDescending(r => r.RateDate)
+                .Select(r => (decimal?)r.Rate).FirstOrDefault()
+                ?? throw new BusinessException($"查無幣別 {currency} 於 {suspenseDate}（含）以前的匯率，請先至「基本資料＞匯率」維護");
+        }
+
         var seq = 1;
         foreach (var account in accounts)
         {
@@ -148,7 +160,7 @@ public class SuspenseService(IDbContextFactory<AppDbContext> factory)
             }
             // MANUAL：全零，由使用者輸入
 
-            if (currency != "NTD" && !account.IsPolicyAccount) rate = 31.5m; // demo 預設匯率
+            if (currency != "NTD" && !account.IsPolicyAccount) rate = fxRate!.Value;
 
             db.SuspenseTransactions.Add(new SuspenseTransaction
             {
@@ -342,19 +354,28 @@ public class SuspenseService(IDbContextFactory<AppDbContext> factory)
             .Select(p => (decimal?)p.Balance)
             .FirstOrDefault();
 
-    internal static string PrevBusinessDay(string iso)
+    // 營業日＝非週六日且不在假日檔（基本資料＞假日）。
+    internal static string PrevBusinessDay(AppDbContext db, string iso)
     {
+        var holidays = HolidaySet(db);
         var d = DateTime.Parse(iso).AddDays(-1);
-        while (d.DayOfWeek is DayOfWeek.Saturday or DayOfWeek.Sunday) d = d.AddDays(-1);
+        while (IsNonBusinessDay(d, holidays)) d = d.AddDays(-1);
         return d.ToString("yyyy-MM-dd");
     }
 
-    internal static string NextBusinessDay(string iso)
+    internal static string NextBusinessDay(AppDbContext db, string iso)
     {
+        var holidays = HolidaySet(db);
         var d = DateTime.Parse(iso);
-        do { d = d.AddDays(1); } while (d.DayOfWeek is DayOfWeek.Saturday or DayOfWeek.Sunday);
+        do { d = d.AddDays(1); } while (IsNonBusinessDay(d, holidays));
         return d.ToString("yyyy-MM-dd");
     }
+
+    private static HashSet<string> HolidaySet(AppDbContext db) =>
+        db.Holidays.AsNoTracking().Select(h => h.HolidayDate).ToHashSet();
+
+    private static bool IsNonBusinessDay(DateTime d, HashSet<string> holidays) =>
+        d.DayOfWeek is DayOfWeek.Saturday or DayOfWeek.Sunday || holidays.Contains(d.ToString("yyyy-MM-dd"));
 
     private static VoucherEntry NewVoucher(SuspenseTransaction tx, string voucherNo, string dc, string accountingCode,
         decimal amount, decimal amountLocal, string summary, string createdBy) =>

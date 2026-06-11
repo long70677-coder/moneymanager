@@ -61,7 +61,7 @@ CashManagement/
 ├─ Components/
 │   ├─ Layout/MainLayout.razor   # 側欄+頂部列+操作者切換
 │   ├─ Shared/                   # PageHeader/Toast/Modal/EmptyState/StatCard/MasterPage（框架共用畫面）
-│   └─ Pages/                    # Suspense / Balances / MasterAccounts / MasterUsers / MasterPermissions / BankFormats
+│   └─ Pages/                    # Suspense / Balances / Master*（帳號/使用者/權限/幣別/匯率/假日）/ BankFormats
 └─ App_Data/cash.db            # 開發用 SQLite（git 忽略）
 ```
 

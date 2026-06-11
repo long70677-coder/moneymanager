@@ -178,6 +178,46 @@ public class AccountManager : IAuditable
     public DateTime UpdatedAt { get; set; } = DateTime.Now;
 }
 
+/// <summary>幣別對照（幣別/幣別類型/金額小數位）。</summary>
+public class Currency : IAuditable, ISoftDelete
+{
+    public int Id { get; set; }
+    public string Code { get; set; } = "";              // unique，例 NTD/USD
+    public string Name { get; set; } = "";              // 中文名稱
+    public string CurrencyType { get; set; } = "FOREIGN"; // TWD | FOREIGN
+    public int DecimalPlaces { get; set; } = 2;         // 金額顯示小數位（NTD/JPY=0）
+    public bool IsActive { get; set; } = true;          // 停用後不出現在幣別下拉
+    public string CreatedBy { get; set; } = "System";
+    public DateTime CreatedAt { get; set; } = DateTime.Now;
+    public string UpdatedBy { get; set; } = "System";
+    public DateTime UpdatedAt { get; set; } = DateTime.Now;
+}
+
+/// <summary>匯率檔（外幣對記帳幣 NTD）。取「日期（含）以前最近一筆」；交易留存匯率快照，刪除歷史匯率不影響既有交易。</summary>
+public class ExchangeRate : IAuditable
+{
+    public int Id { get; set; }
+    public string RateDate { get; set; } = "";          // 唯一鍵：日期+幣別
+    public string CurrencyCode { get; set; } = "";
+    public decimal Rate { get; set; }
+    public string CreatedBy { get; set; } = "System";
+    public DateTime CreatedAt { get; set; } = DateTime.Now;
+    public string UpdatedBy { get; set; } = "System";
+    public DateTime UpdatedAt { get; set; } = DateTime.Now;
+}
+
+/// <summary>假日檔（營業日判斷＝排除週六日＋本檔日期）。</summary>
+public class Holiday : IAuditable
+{
+    public int Id { get; set; }
+    public string HolidayDate { get; set; } = "";       // unique
+    public string Name { get; set; } = "";
+    public string CreatedBy { get; set; } = "System";
+    public DateTime CreatedAt { get; set; } = DateTime.Now;
+    public string UpdatedBy { get; set; } = "System";
+    public DateTime UpdatedAt { get; set; } = DateTime.Now;
+}
+
 /// <summary>銀行格式設定（轉檔 profile）。鍵=銀行+幣別（幣別可 ZZZ 共用）+版本。</summary>
 public class BankFormatProfile
 {

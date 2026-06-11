@@ -1,6 +1,7 @@
 @page "/balances"
 @inject BalanceService BalanceSvc
 @inject IngestService Ingest
+@inject MasterDataService MasterData
 @inject CurrentUserState UserState
 @implements IDisposable
 
@@ -24,10 +25,10 @@
         <div class="flex flex-col gap-1.5">
             <label class="text-xs font-medium text-[#44474e]">幣別</label>
             <select @bind="currency" class="form-input">
-                <option value="NTD">新台幣 (NTD)</option>
-                <option value="USD">美元 (USD)</option>
-                <option value="EUR">歐元 (EUR)</option>
-                <option value="JPY">日圓 (JPY)</option>
+                @foreach (var c in currencies)
+                {
+                    <option value="@c.Code">@c.Name (@c.Code)</option>
+                }
             </select>
         </div>
         <div class="flex flex-col gap-1.5 md:col-span-2">
@@ -257,7 +258,15 @@
     private int DiffCount => rows.Count(r => r.Diff is not null and not 0);
     private int UnreviewedCount => rows.Count(r => r.PassbookBalance != null && !r.IsReviewed);
 
-    protected override void OnInitialized() => UserState.OnChange += HandleUserChanged;
+    // 幣別下拉由幣別主檔（/master/currencies）供應
+    private List<Data.Currency> currencies = [];
+
+    protected override void OnInitialized()
+    {
+        UserState.OnChange += HandleUserChanged;
+        currencies = MasterData.GetActiveCurrencies();
+        if (currencies.Count > 0 && currencies.All(c => c.Code != currency)) currency = currencies[0].Code;
+    }
 
     private void HandleUserChanged()
     {

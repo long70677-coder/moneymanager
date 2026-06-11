@@ -21,6 +21,9 @@
 | 10 | `bank_format_profiles` | 銀行格式設定檔 | FUN2.1.1 | 📐 已設計，未實作 |
 | 11 | `import_logs` | 轉檔歷程檔 | FUN2.1.1 | 📐 已設計，未實作 |
 | 12 | `ledger_balances` | 帳列餘額檔 | FUN2.1.1／結帳 | 📐 已設計，未實作 |
+| 13 | `currencies` | 幣別對照 | 共用基礎 | ✅ 已實作（維護框架） |
+| 14 | `exchange_rates` | 匯率檔 | 共用基礎 | ✅ 已實作（維護框架） |
+| 15 | `holidays` | 假日檔（營業日判斷） | 共用基礎 | ✅ 已實作（維護框架） |
 
 > 第 10–12 表為 FUN2.1.1 轉檔的設計產物，完整設計見 `FUN2.1.1_轉檔架構設計.md`。`ledger_balances` 由後續「結帳/日結流程」供應，FUN2.1.1 僅唯讀消費。
 
@@ -238,6 +241,39 @@ bank_accounts ──< account_managers >── users   (account_code FK / user_i
 ### 12. `ledger_balances`（帳列餘額檔 ← FUN2.1.1／結帳，📐 設計）
 
 公司內部帳列餘額（本日結餘），由**結帳/日結流程**寫入；FUN2.1.1（畫面「系統前日帳列餘額」）與 FUN2.1.2（`prev_company_balance` 來源）皆**唯讀消費**。主要欄位：balance_date、account_code(FK)、currency、balance（結餘）、is_closed、closed_at、軌跡。唯一鍵 **UNIQUE(balance_date, account_code, currency)**。完整 DDL 見 `FUN2.1.1_轉檔架構設計.md` §8.4。
+
+### 13. `currencies`（幣別對照 ← 共用基礎）
+
+| 欄位 | 型別 | 鍵/約束 | 說明 |
+|------|------|---------|------|
+| code | TEXT | UNIQUE, NOT NULL | 幣別代碼（NTD/USD…，建立後不可修改） |
+| name | TEXT | NOT NULL | 幣別名稱 |
+| currency_type | TEXT | DEFAULT 'FOREIGN' | TWD / FOREIGN（台外幣作業分流） |
+| decimal_places | INTEGER | DEFAULT 2 | 金額顯示小數位（NTD/JPY=0） |
+| is_active＋審計欄位 | | | 維護框架共通欄位 |
+
+> 暫收／餘額轉檔畫面的幣別下拉、名稱、金額格式皆由本表供應；被匯率/交易參照後只能停用。
+
+### 14. `exchange_rates`（匯率檔 ← 共用基礎）
+
+| 欄位 | 型別 | 鍵/約束 | 說明 |
+|------|------|---------|------|
+| rate_date | TEXT | UNIQUE(rate_date, currency_code) | 匯率日期 |
+| currency_code | TEXT | 〃 | 幣別（不含 NTD，記帳幣恆 1） |
+| rate | NUMERIC | NOT NULL, >0 | 1 外幣 = ? NTD |
+| 審計欄位 | | | |
+
+> 立暫收取「暫收日期（含）以前最近一筆」（SA 業務規則）；查無匯率擋下立帳。交易留存匯率快照，異動歷史匯率不影響既有交易，故允許實體刪除。
+
+### 15. `holidays`（假日檔 ← 共用基礎）
+
+| 欄位 | 型別 | 鍵/約束 | 說明 |
+|------|------|---------|------|
+| holiday_date | TEXT | UNIQUE, NOT NULL | 假日日期 |
+| name | TEXT | NOT NULL | 假日名稱 |
+| 審計欄位 | | | |
+
+> 營業日判斷＝排除週六日＋本表日期；`PrevBusinessDay`/`NextBusinessDay`（T-1、轉檔次日推算）引用。
 
 ---
 

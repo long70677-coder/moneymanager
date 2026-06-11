@@ -1,0 +1,45 @@
+@page "/master/currencies"
+
+<PageTitle>幣別基本資料 - 銀行存款資金管理系統</PageTitle>
+
+<PageHeader Group="基本資料" Title="幣別基本資料"
+            Description="維護幣別對照（幣別類型、金額顯示小數位）。幣別被匯率／交易資料參照後不可刪除，請改用停用；停用幣別不再出現於各作業的幣別下拉。" />
+
+<MasterPage TEntity="Currency" Def="@def" />
+
+@code {
+    private static readonly MasterDef<Currency> def = new()
+    {
+        Title = "幣別",
+        Icon = "universal_currency_alt",
+        ExportName = "幣別基本資料",
+        Fields =
+        [
+            new() { Key = "code", Label = "幣別代碼", Member = c => c.Code,
+                    Required = true, InUniqueKey = true, Mono = true, Editable = false,
+                    Placeholder = "例：USD", FormHint = "業務主鍵，建立後不可修改" },
+            new() { Key = "name", Label = "幣別名稱", Member = c => c.Name, Required = true,
+                    Placeholder = "例：美元" },
+            new() { Key = "currencyType", Label = "幣別類型", Member = c => c.CurrencyType, Kind = FieldKind.Select,
+                    Options = [("TWD", "本國幣 (TWD)"), ("FOREIGN", "外幣")],
+                    FormHint = "對應帳號的幣別屬性（台幣／外幣作業分流）" },
+            new() { Key = "decimalPlaces", Label = "金額小數位", Member = c => c.DecimalPlaces, Kind = FieldKind.Number,
+                    Filterable = false, FormHint = "金額顯示位數，例：NTD/JPY=0、USD=2" },
+            new() { Key = "isActive", Label = "啟用", Member = c => c.IsActive, Kind = FieldKind.Bool,
+                    ShowInForm = false },
+        ],
+        Validate = (db, c, isNew) =>
+        {
+            if (c.DecimalPlaces is < 0 or > 6)
+                throw new BusinessException("金額小數位需介於 0～6");
+        },
+        DeleteBlockReason = (db, c) =>
+        {
+            var refs = new List<string>();
+            if (db.ExchangeRates.Any(r => r.CurrencyCode == c.Code)) refs.Add("匯率");
+            if (db.SuspenseTransactions.Any(t => t.Currency == c.Code)) refs.Add("暫收交易");
+            if (db.PassbookBalances.Any(p => p.Currency == c.Code)) refs.Add("存摺餘額");
+            return refs.Count == 0 ? null : $"幣別 {c.Code} 已被{string.Join("、", refs)}參照，無法刪除，請改用「停用」";
+        },
+    };
+}
