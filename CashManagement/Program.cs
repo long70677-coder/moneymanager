@@ -26,6 +26,7 @@ builder.Services.AddSingleton<BalanceService>();
 builder.Services.AddSingleton<IngestService>();
 builder.Services.AddSingleton<BankFormatService>();
 builder.Services.AddSingleton<MasterDataService>();
+builder.Services.AddSingleton<BankAccountService>(); // URS2.90.202 銀行帳號基本資料
 builder.Services.AddSingleton<MasterMaintenanceService>(); // 基本資料維護框架（SD_MASTER_FRAMEWORK.md）
 
 var app = builder.Build();

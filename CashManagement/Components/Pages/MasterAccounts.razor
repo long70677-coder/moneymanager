@@ -1,48 +1,549 @@
 @page "/master"
 @page "/master/accounts"
+@inject BankAccountService AccountSvc
+@inject CurrentUserState UserState
+@inject IJSRuntime JS
+@implements IDisposable
 
 <PageTitle>銀行帳號基本資料 - 銀行存款資金管理系統</PageTitle>
 
 <PageHeader Group="基本資料" Title="銀行帳號基本資料"
-            Description="維護銀行存款帳號主檔。帳號被存摺餘額／暫收交易／維護權限參照後不可刪除，請改用停用；停用帳號不再參與轉檔與暫收作業。" />
+            Description="URS2.90.202：查詢區設定條件後查詢；顯示區可勾選並直接編輯，按「儲存」寫入；欄位標題旁漏斗可如 Excel 篩選查詢結果。" />
 
-<MasterPage TEntity="BankAccount" Def="@def" />
+@* ── 一、查詢區 ─────────────────────────────────────── *@
+<section class="app-card overflow-visible">
+    <div class="px-5 py-4 flex items-center gap-3 border-b border-[#eef0f4]">
+        <span class="w-8 h-8 rounded-lg bg-[#eff4ff] text-[#2563EB] flex items-center justify-center shrink-0">
+            <span class="material-symbols-outlined text-[18px]">manage_search</span>
+        </span>
+        <h3 class="text-sm font-semibold text-[#0f172a]">查詢條件</h3>
+    </div>
+    <div class="p-5 flex flex-col gap-4">
+        <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <div class="flex flex-col gap-1.5">
+                <label class="text-xs font-medium text-[#44474e]">銀行總行代號</label>
+                <select class="form-input" @bind="q.HeadOfficeCode">
+                    <option value="">（全部）</option>
+                    @foreach (var h in lookups.Banks.Select(b => new { b.HeadOfficeCode, b.ShortName }).DistinctBy(x => x.HeadOfficeCode))
+                    {
+                        <option value="@h.HeadOfficeCode">@h.HeadOfficeCode（@h.ShortName）</option>
+                    }
+                </select>
+            </div>
+            <div class="flex flex-col gap-1.5">
+                <label class="text-xs font-medium text-[#44474e]">銀行代碼</label>
+                <select class="form-input" @bind="q.BankCode">
+                    <option value="">（全部）</option>
+                    @foreach (var b in lookups.Banks)
+                    {
+                        <option value="@b.BankCode">@b.BankCode（@b.ShortName）</option>
+                    }
+                </select>
+            </div>
+            <div class="flex flex-col gap-1.5">
+                <label class="text-xs font-medium text-[#44474e]">銀行帳號(短)</label>
+                <input class="form-input" list="accountCodeList" @bind="q.AccountCode" placeholder="可輸入或選取" />
+                <datalist id="accountCodeList">
+                    @foreach (var (acctCode, longCode) in accountCodeOptions)
+                    {
+                        <option value="@acctCode">@longCode</option>
+                    }
+                </datalist>
+            </div>
+            <div class="flex flex-col gap-1.5">
+                <label class="text-xs font-medium text-[#44474e]">存款類別</label>
+                <select class="form-input" @bind="q.DepositType">
+                    <option value="">（全部）</option>
+                    @(CodeOptions("DEPOSIT_TYPE"))
+                </select>
+            </div>
+            <div class="flex flex-col gap-1.5">
+                <label class="text-xs font-medium text-[#44474e]">帳冊別</label>
+                <select class="form-input" @bind="q.LedgerType">
+                    <option value="">（全部）</option>
+                    @(CodeOptions("LEDGER_TYPE"))
+                </select>
+            </div>
+            <div class="flex flex-col gap-1.5">
+                <label class="text-xs font-medium text-[#44474e]">幣別類型</label>
+                <select class="form-input" value="@q.CurrencyType" @onchange="OnQueryCurrencyTypeChanged">
+                    <option value="">（全部）</option>
+                    @(CodeOptions("CURRENCY_TYPE"))
+                </select>
+            </div>
+            <div class="flex flex-col gap-1.5">
+                <label class="text-xs font-medium text-[#44474e]">幣別</label>
+                <select class="form-input" @bind="q.CurrencyCode">
+                    <option value="">（全部）</option>
+                    @foreach (var c in QueryCurrencies)
+                    {
+                        <option value="@c.Code">@c.Name (@c.Code)</option>
+                    }
+                </select>
+            </div>
+        </div>
+        <div class="flex flex-wrap items-center gap-x-6 gap-y-2 pt-3 border-t border-[#f1f5f9]">
+            <span class="text-xs font-semibold text-[#475569]">其他條件</span>
+            <label class="flex items-center gap-1.5 text-sm text-[#44474e] cursor-pointer">
+                <input type="checkbox" class="w-4 h-4 accent-[#2563EB]" @bind="q.OnlySuspense" />暫收帳戶
+            </label>
+            <label class="flex items-center gap-1.5 text-sm text-[#44474e] cursor-pointer">
+                <input type="checkbox" class="w-4 h-4 accent-[#2563EB]" @bind="q.OnlyFedi" />FEDI帳戶
+            </label>
+            <label class="flex items-center gap-1.5 text-sm text-[#44474e] cursor-pointer">
+                <input type="checkbox" class="w-4 h-4 accent-[#2563EB]" @bind="q.OnlyCompanyMain" />公司主調度帳戶
+            </label>
+            <label class="flex items-center gap-1.5 text-sm text-[#44474e] cursor-pointer">
+                <input type="checkbox" class="w-4 h-4 accent-[#2563EB]" @bind="q.OnlyBankMain" />同行主調度帳戶
+            </label>
+            <label class="flex items-center gap-1.5 text-sm text-[#44474e] cursor-pointer">
+                <input type="checkbox" class="w-4 h-4 accent-[#2563EB]" @bind="q.OnlyDraft" />票匯
+            </label>
+        </div>
+
+        @* ── 二、操作區 ───────────────────────────── *@
+        <div class="flex flex-wrap gap-2 pt-4 border-t border-[#eef0f4]">
+            <button @onclick="DoQuery" class="btn btn-primary px-6">
+                <span class="material-symbols-outlined text-[18px]">search</span>查詢
+            </button>
+            <button @onclick="OpenCreate" class="btn btn-secondary" disabled="@(!IsManager)" title="@MgrHint">
+                <span class="material-symbols-outlined text-[18px]">add</span>新增
+            </button>
+            <button @onclick="DoDelete" class="btn btn-danger-ghost" disabled="@(!IsManager)" title="@MgrHint">
+                <span class="material-symbols-outlined text-[18px]">delete</span>刪除
+            </button>
+            <button @onclick="DoSave" class="btn btn-primary ml-auto px-6" disabled="@(!IsManager)" title="@MgrHint">
+                <span class="material-symbols-outlined text-[18px]">save</span>儲存
+            </button>
+        </div>
+    </div>
+</section>
+
+@* ── 三、訊息區 ─────────────────────────────────────── *@
+<section class="@($"alert {MsgCls}")">
+    <span class="material-symbols-outlined text-[18px] mt-0.5 shrink-0">@MsgIcon</span>
+    <div class="flex-1 text-sm leading-relaxed">
+        @if (msgLines.Count == 0)
+        {
+            <span class="opacity-70">請設定查詢條件後按「查詢」；勾選資料列編輯後按「儲存」。</span>
+        }
+        else
+        {
+            @foreach (var line in msgLines)
+            {
+                <div>@line</div>
+            }
+        }
+    </div>
+</section>
+
+@* ── 四、顯示區 ─────────────────────────────────────── *@
+<section class="app-card overflow-visible">
+    <div class="px-5 py-4 flex items-center gap-3 border-b border-[#eef0f4]">
+        <span class="w-8 h-8 rounded-lg bg-[#eff4ff] text-[#2563EB] flex items-center justify-center shrink-0">
+            <span class="material-symbols-outlined text-[18px]">account_balance</span>
+        </span>
+        <h3 class="text-sm font-semibold text-[#0f172a]">帳號基本資料</h3>
+        <span class="text-xs text-[#7a7d85] bg-[#f1f5f9] px-2.5 py-1 rounded-full">
+            顯示 @Visible.Count()／共 @rows.Count 筆@(CheckedRows.Count > 0 ? $"，已勾選 {CheckedRows.Count}" : "")
+        </span>
+        @if (colFilters.Values.Any(v => v != null))
+        {
+            <button @onclick="ClearColFilters" class="text-xs text-[#2563EB] hover:underline inline-flex items-center gap-0.5">
+                <span class="material-symbols-outlined text-[14px]">filter_alt_off</span>清除欄位篩選
+            </button>
+        }
+    </div>
+
+    @if (rows.Count == 0)
+    {
+        <EmptyState Icon="account_balance" Title="尚無查詢結果" Hint="設定查詢條件後按「查詢」。" />
+    }
+    else
+    {
+        <div class="overflow-x-auto w-full pb-40">
+            <table class="w-full text-left border-collapse min-w-max">
+                <thead class="bg-[#f8fafc] border-b border-[#e6e8ef] text-xs font-semibold text-[#475569]">
+                    <tr>
+                        <th class="px-3 py-3">
+                            <input type="checkbox" class="w-4 h-4 accent-[#2563EB]" title="全選（顯示中的列）"
+                                   checked="@(Visible.Any() && Visible.All(r => r.Checked))"
+                                   @onchange="ToggleAllChecked" />
+                        </th>
+                        @foreach (var col in Cols)
+                        {
+                            <th class="px-3 py-2.5">
+                                <ColumnFilterDropdown Label="@col.Label" Values="@DistinctOf(col.Key)"
+                                                      Selected="@colFilters.GetValueOrDefault(col.Key)"
+                                                      SelectedChanged='v => SetColFilter(col.Key, v)'
+                                                      OnSort='asc => SortBy(col.Key, asc)' />
+                            </th>
+                        }
+                    </tr>
+                </thead>
+                <tbody class="text-sm divide-y divide-[#eef0f4]">
+                    @foreach (var r in Visible)
+                    {
+                        var a = r.Account;
+                        <tr class="@($"hover:bg-[#f8f9fc] transition-colors align-middle {(r.Checked ? "bg-[#eff6ff]" : "")} {(!a.IsActive ? "opacity-60" : "")}")">
+                            <td class="px-3 py-2"><input type="checkbox" class="w-4 h-4 accent-[#2563EB]" checked="@r.Checked" @onchange="e => r.Checked = e.Value is true" /></td>
+                            <td class="px-3 py-2 font-mono text-xs">@a.BankCode</td>
+                            <td class="px-3 py-2 text-[#44474e] whitespace-nowrap">@(r.BankShortName ?? "—")</td>
+                            <td class="px-3 py-2 font-mono text-xs whitespace-nowrap">@a.AccountLongCode</td>
+                            <td class="px-3 py-2 font-mono text-xs font-medium text-[#0f172a]">@a.AccountCode</td>
+                            <td class="px-3 py-2"><input type="number" class="form-input h-8 w-16 text-xs" disabled="@RO" @bind="a.SortOrder" /></td>
+                            <td class="px-3 py-2"><select class="form-input h-8 w-20 text-xs" disabled="@RO" @bind="a.DepositType">@(CodeOptions("DEPOSIT_TYPE"))</select></td>
+                            <td class="px-3 py-2"><select class="form-input h-8 w-20 text-xs" disabled="@RO" @bind="a.CurrencyType">@(CodeOptions("CURRENCY_TYPE"))</select></td>
+                            <td class="px-3 py-2">
+                                <select class="form-input h-8 w-20 text-xs" disabled="@RO" @bind="a.CurrencyCode">
+                                    @foreach (var c in lookups.Currencies)
+                                    {
+                                        <option value="@c.Code">@c.Code</option>
+                                    }
+                                </select>
+                            </td>
+                            <td class="px-3 py-2"><input class="form-input h-8 w-20 text-xs font-mono" disabled="@RO" maxlength="5" @bind="a.SubjectCode" /></td>
+                            <td class="px-3 py-2"><select class="form-input h-8 w-20 text-xs" disabled="@RO" @bind="a.LedgerType">@(CodeOptions("LEDGER_TYPE"))</select></td>
+                            <td class="px-3 py-2">
+                                <select class="form-input h-8 w-24 text-xs" disabled="@(RO || a.CurrencyType != "FOREIGN")" @bind="a.FxAccountType">
+                                    <option value="">—</option>
+                                    @(CodeOptions("FX_ACCOUNT_TYPE"))
+                                </select>
+                            </td>
+                            <td class="px-3 py-2 text-center text-xs text-[#64748b]">@a.BookingCurrency</td>
+                            <td class="px-3 py-2 text-center"><input type="checkbox" class="w-4 h-4 accent-[#2563EB]" disabled="@RO" @bind="a.IsSuspense" /></td>
+                            <td class="px-3 py-2 text-center"><input type="checkbox" class="w-4 h-4 accent-[#2563EB]" disabled="@RO" @bind="a.IsFedi" /></td>
+                            <td class="px-3 py-2 text-center"><input type="checkbox" class="w-4 h-4 accent-[#2563EB]" disabled="@RO" @bind="a.IsCompanyMain" /></td>
+                            <td class="px-3 py-2 text-center"><input type="checkbox" class="w-4 h-4 accent-[#2563EB]" disabled="@RO" @bind="a.IsBankMain" /></td>
+                            <td class="px-3 py-2 text-center"><input type="checkbox" class="w-4 h-4 accent-[#2563EB]" disabled="@RO" @bind="a.IsDraft" /></td>
+                            <td class="px-3 py-2"><select class="form-input h-8 w-20 text-xs" disabled="@RO" @bind="a.InterestPayout">@(CodeOptions("INTEREST_PAYOUT"))</select></td>
+                            <td class="px-3 py-2"><select class="form-input h-8 w-20 text-xs" disabled="@RO" @bind="a.InterestDays">@(CodeOptions("INTEREST_DAYS"))</select></td>
+                            <td class="px-3 py-2"><input class="form-input h-8 w-32 text-xs" disabled="@RO" @bind="a.Memo" /></td>
+                            <td class="px-3 py-2"><input type="date" class="form-input h-8 w-36 text-xs" disabled="@RO" value="@a.OpenDate" @onchange="e => a.OpenDate = D(e.Value)" /></td>
+                            <td class="px-3 py-2"><input type="date" class="form-input h-8 w-36 text-xs" disabled="@RO" value="@a.SuspendDate" @onchange="e => a.SuspendDate = D(e.Value)" /></td>
+                            <td class="px-3 py-2"><input type="date" class="form-input h-8 w-36 text-xs" disabled="@RO" value="@a.BankCloseDate" @onchange="e => a.BankCloseDate = D(e.Value)" /></td>
+                            <td class="px-3 py-2"><input type="date" class="form-input h-8 w-36 text-xs" disabled="@RO" value="@a.CompanyCloseDate" @onchange="e => a.CompanyCloseDate = D(e.Value)" /></td>
+                            <td class="px-3 py-2"><input class="form-input h-8 w-32 text-xs font-mono" disabled="@RO" @bind="a.ImportFileName" /></td>
+                            <td class="px-3 py-2 text-xs text-[#9aa0ad]">@a.UpdatedBy</td>
+                            <td class="px-3 py-2 text-xs text-[#9aa0ad] whitespace-nowrap">@a.UpdatedAt.ToString("yyyy/MM/dd HH:mm:ss")</td>
+                            <td class="px-3 py-2 text-center"><input type="checkbox" class="w-4 h-4 accent-[#15803d]" disabled="@RO" @bind="a.IsActive" /></td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+</section>
+
+@* ── 新增視窗（URS §二【新增】） ─────────────────────── *@
+@if (createOpen)
+{
+    <Modal Icon="add_circle" OnClose="() => createOpen = false">
+        <Title>銀行帳號基本資料新增</Title>
+        <ChildContent>
+            <div class="p-5 grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div class="flex flex-col gap-1.5">
+                    <label class="text-xs font-medium text-[#44474e]">銀行代碼 <span class="text-[#dc2626]">*</span></label>
+                    <select class="form-input" @bind="newAcc.BankCode">
+                        <option value="">— 請選擇 —</option>
+                        @foreach (var b in lookups.Banks)
+                        {
+                            <option value="@b.BankCode">@b.BankCode（@b.ShortName）</option>
+                        }
+                    </select>
+                </div>
+                <div class="flex flex-col gap-1.5">
+                    <label class="text-xs font-medium text-[#44474e]">銀行帳號(長) <span class="text-[#dc2626]">*</span></label>
+                    <input class="form-input font-mono" @bind="newAcc.AccountLongCode" placeholder="例：012-0001-00001-001" />
+                </div>
+                <div class="flex flex-col gap-1.5">
+                    <label class="text-xs font-medium text-[#44474e]">銀行帳號(短) <span class="text-[#dc2626]">*</span></label>
+                    <input class="form-input font-mono" @bind="newAcc.AccountCode" placeholder="例：ACT-001" />
+                </div>
+                <div class="flex flex-col gap-1.5">
+                    <label class="text-xs font-medium text-[#44474e]">帳戶名稱</label>
+                    <input class="form-input" @bind="newAcc.AccountName" />
+                </div>
+                <div class="flex flex-col gap-1.5">
+                    <label class="text-xs font-medium text-[#44474e]">排列序號 <span class="text-[#dc2626]">*</span></label>
+                    <input type="number" class="form-input" @bind="newAcc.SortOrder" />
+                </div>
+                <div class="flex flex-col gap-1.5">
+                    <label class="text-xs font-medium text-[#44474e]">存款類別 <span class="text-[#dc2626]">*</span></label>
+                    <select class="form-input" @bind="newAcc.DepositType">@(CodeOptions("DEPOSIT_TYPE"))</select>
+                </div>
+                <div class="flex flex-col gap-1.5">
+                    <label class="text-xs font-medium text-[#44474e]">幣別類型 <span class="text-[#dc2626]">*</span></label>
+                    <select class="form-input" @bind="newAcc.CurrencyType">@(CodeOptions("CURRENCY_TYPE"))</select>
+                </div>
+                <div class="flex flex-col gap-1.5">
+                    <label class="text-xs font-medium text-[#44474e]">幣別 <span class="text-[#dc2626]">*</span></label>
+                    <select class="form-input" @bind="newAcc.CurrencyCode">
+                        <option value="">— 請選擇 —</option>
+                        @foreach (var c in lookups.Currencies)
+                        {
+                            <option value="@c.Code">@c.Name (@c.Code)</option>
+                        }
+                    </select>
+                </div>
+                <div class="flex flex-col gap-1.5">
+                    <label class="text-xs font-medium text-[#44474e]">銀存子目（5碼） <span class="text-[#dc2626]">*</span></label>
+                    <input class="form-input font-mono" maxlength="5" @bind="newAcc.SubjectCode" />
+                </div>
+                <div class="flex flex-col gap-1.5">
+                    <label class="text-xs font-medium text-[#44474e]">帳冊別 <span class="text-[#dc2626]">*</span></label>
+                    <select class="form-input" @bind="newAcc.LedgerType">@(CodeOptions("LEDGER_TYPE"))</select>
+                </div>
+                @if (newAcc.CurrencyType == "FOREIGN")
+                {
+                    <div class="flex flex-col gap-1.5">
+                        <label class="text-xs font-medium text-[#44474e]">外幣帳戶類型 <span class="text-[#dc2626]">*</span></label>
+                        <select class="form-input" @bind="newAcc.FxAccountType">
+                            <option value="">— 請選擇 —</option>
+                            @(CodeOptions("FX_ACCOUNT_TYPE"))
+                        </select>
+                    </div>
+                }
+                <div class="flex flex-col gap-1.5">
+                    <label class="text-xs font-medium text-[#44474e]">開戶日期 <span class="text-[#dc2626]">*</span></label>
+                    <input type="date" class="form-input" value="@newAcc.OpenDate" @onchange="e => newAcc.OpenDate = D(e.Value)" />
+                </div>
+                <div class="flex flex-col gap-1.5">
+                    <label class="text-xs font-medium text-[#44474e]">轉檔檔名（FUN2.1.1 用）</label>
+                    <input class="form-input font-mono" @bind="newAcc.ImportFileName" placeholder="例：ACT-001.csv" />
+                </div>
+                <div class="flex items-end pb-2">
+                    <label class="flex items-center gap-2 text-sm text-[#44474e] cursor-pointer">
+                        <input type="checkbox" class="w-4 h-4 accent-[#2563EB]" @bind="newAcc.IsSuspense" />暫收帳戶
+                    </label>
+                </div>
+            </div>
+        </ChildContent>
+        <Footer>
+            <button @onclick="() => createOpen = false" class="btn btn-outline">取消</button>
+            <button @onclick="DoCreate" class="btn btn-primary">
+                <span class="material-symbols-outlined text-[18px]">save</span>儲存
+            </button>
+        </Footer>
+    </Modal>
+}
 
 @code {
-    private static readonly MasterDef<BankAccount> def = new()
+    private class RowVm
     {
-        Title = "銀行帳號",
-        Icon = "account_balance",
-        ExportName = "銀行帳號基本資料",
-        Fields =
-        [
-            new() { Key = "accountCode", Label = "帳號短碼", Member = a => a.AccountCode,
-                    Required = true, InUniqueKey = true, Mono = true, Editable = false,
-                    Placeholder = "例：ACT-001", FormHint = "業務主鍵，建立後不可修改" },
-            new() { Key = "accountLongCode", Label = "完整帳號", Member = a => a.AccountLongCode,
-                    Required = true, Mono = true, Placeholder = "例：012-0001-00001-001" },
-            new() { Key = "bankCode", Label = "銀行代碼", Member = a => a.BankCode,
-                    Required = true, Mono = true, Placeholder = "例：012",
-                    FormHint = "轉檔時以銀行代碼＋幣別比對格式設定" },
-            new() { Key = "accountName", Label = "帳戶名稱", Member = a => a.AccountName, Required = true },
-            new() { Key = "accountPurpose", Label = "帳號用途", Member = a => a.AccountPurpose },
-            new() { Key = "importFileName", Label = "轉檔檔名", Member = a => a.ImportFileName,
-                    Mono = true, Placeholder = "例：ACT-001.csv", FormHint = "餘額檔以檔名對應帳號（一檔一帳號）" },
-            new() { Key = "currencyType", Label = "幣別屬性", Member = a => a.CurrencyType, Kind = FieldKind.Select,
-                    Options = [("TWD", "本國幣 (TWD)"), ("FOREIGN", "外幣")] },
-            new() { Key = "isSuspense", Label = "暫收帳戶", Member = a => a.IsSuspense, Kind = FieldKind.Bool },
-            new() { Key = "isPolicyAccount", Label = "保單帳戶", Member = a => a.IsPolicyAccount, Kind = FieldKind.Bool,
-                    FormHint = "保單帳戶匯率固定為 1" },
-            new() { Key = "isActive", Label = "啟用", Member = a => a.IsActive, Kind = FieldKind.Bool,
-                    ShowInForm = false },
-        ],
-        DeleteBlockReason = (db, a) =>
+        public required BankAccount Account { get; init; }
+        public string? BankShortName { get; init; }
+        public bool Checked { get; set; }
+    }
+
+    private record Col(string Key, string Label, Func<RowVm, string> Display);
+
+    private AccountLookups lookups = new();
+    private List<(string Code, string LongCode)> accountCodeOptions = [];
+    private readonly AccountQuery q = new() { DepositType = "1", LedgerType = "1", CurrencyType = "TWD", CurrencyCode = "NTD" };
+
+    private List<RowVm> rows = [];
+    private readonly Dictionary<string, HashSet<string>?> colFilters = [];
+    private List<string> msgLines = [];
+    private string msgType = "info"; // info | success | error
+
+    private bool createOpen;
+    private BankAccount newAcc = new();
+
+    private List<Col> Cols = [];
+
+    private bool IsManager => UserState.CurrentUser?.Role == Roles.Manager;
+    private bool RO => !IsManager;
+    private string MgrHint => IsManager ? "" : "僅主管可維護基本資料";
+
+    private string MsgCls => msgType switch { "success" => "alert-success", "error" => "alert-error", _ => "alert-info" };
+    private string MsgIcon => msgType switch { "success" => "task_alt", "error" => "error", _ => "info" };
+
+    private IEnumerable<Data.Currency> QueryCurrencies =>
+        string.IsNullOrEmpty(q.CurrencyType) ? lookups.Currencies : lookups.Currencies.Where(c => c.CurrencyType == q.CurrencyType);
+
+    protected override void OnInitialized()
+    {
+        UserState.OnChange += HandleUserChanged;
+        lookups = AccountSvc.GetLookups();
+        accountCodeOptions = AccountSvc.GetAccountCodeOptions();
+        BuildCols();
+        DoQuery();
+        msgLines = []; // 初載不顯示「查詢成功」
+        msgType = "info";
+    }
+
+    public void Dispose() => UserState.OnChange -= HandleUserChanged;
+    private void HandleUserChanged() => InvokeAsync(StateHasChanged);
+
+    private void BuildCols() => Cols =
+    [
+        new("bank", "銀行代碼", r => r.Account.BankCode),
+        new("branch", "分行簡稱", r => r.BankShortName ?? ""),
+        new("longCode", "銀行帳號(長)", r => r.Account.AccountLongCode),
+        new("shortCode", "銀行帳號(短)", r => r.Account.AccountCode),
+        new("sortOrder", "排列序號", r => r.Account.SortOrder.ToString()),
+        new("depositType", "存款類別", r => lookups.CodeLabel("DEPOSIT_TYPE", r.Account.DepositType)),
+        new("currencyType", "幣別類型", r => lookups.CodeLabel("CURRENCY_TYPE", r.Account.CurrencyType)),
+        new("currency", "幣別", r => r.Account.CurrencyCode ?? ""),
+        new("subject", "銀存子目", r => r.Account.SubjectCode),
+        new("ledger", "帳冊別", r => lookups.CodeLabel("LEDGER_TYPE", r.Account.LedgerType)),
+        new("fxType", "外幣帳戶類型", r => lookups.CodeLabel("FX_ACCOUNT_TYPE", r.Account.FxAccountType)),
+        new("booking", "記帳幣", r => r.Account.BookingCurrency),
+        new("suspense", "暫收帳戶", r => r.Account.IsSuspense ? "是" : "否"),
+        new("fedi", "FEDI帳戶", r => r.Account.IsFedi ? "是" : "否"),
+        new("companyMain", "公司主調度", r => r.Account.IsCompanyMain ? "是" : "否"),
+        new("bankMain", "同行主調度", r => r.Account.IsBankMain ? "是" : "否"),
+        new("draft", "票匯", r => r.Account.IsDraft ? "是" : "否"),
+        new("payout", "活存領息方式", r => lookups.CodeLabel("INTEREST_PAYOUT", r.Account.InterestPayout)),
+        new("days", "活存計息天數", r => lookups.CodeLabel("INTEREST_DAYS", r.Account.InterestDays)),
+        new("memo", "備註", r => r.Account.Memo ?? ""),
+        new("openDate", "開戶日期", r => r.Account.OpenDate ?? ""),
+        new("suspendDate", "停用日期", r => r.Account.SuspendDate ?? ""),
+        new("bankClose", "銀行結清日期", r => r.Account.BankCloseDate ?? ""),
+        new("companyClose", "公司結清日期", r => r.Account.CompanyCloseDate ?? ""),
+        new("importFile", "轉檔檔名", r => r.Account.ImportFileName ?? ""),
+        new("updatedBy", "維護人員", r => r.Account.UpdatedBy),
+        new("updatedAt", "維護時間", r => r.Account.UpdatedAt.ToString("yyyy/MM/dd HH:mm:ss")),
+        new("active", "帳號啟用", r => r.Account.IsActive ? "是" : "否"),
+    ];
+
+    // ── 顯示區：欄位篩選／排序 ─────────────────────────
+
+    private IEnumerable<RowVm> Visible => rows.Where(r =>
+        Cols.All(c => colFilters.GetValueOrDefault(c.Key) is not { } sel || sel.Contains(c.Display(r))));
+
+    private List<RowVm> CheckedRows => rows.Where(r => r.Checked).ToList();
+
+    private IReadOnlyList<string> DistinctOf(string key)
+    {
+        var col = Cols.First(c => c.Key == key);
+        return rows.Select(col.Display).Distinct().OrderBy(v => v, StringComparer.Ordinal).ToList();
+    }
+
+    private void SetColFilter(string key, HashSet<string>? sel) => colFilters[key] = sel;
+
+    private void ClearColFilters() => colFilters.Clear();
+
+    private void SortBy(string key, bool asc)
+    {
+        var col = Cols.First(c => c.Key == key);
+        Comparison<RowVm> cmp = (a, b) =>
         {
-            var refs = new List<string>();
-            if (db.PassbookBalances.Any(p => p.AccountCode == a.AccountCode)) refs.Add("存摺餘額");
-            if (db.SuspenseTransactions.Any(t => t.AccountCode == a.AccountCode)) refs.Add("暫收交易");
-            if (db.AccountManagers.Any(m => m.AccountCode == a.AccountCode)) refs.Add("帳號維護權限");
-            return refs.Count == 0 ? null : $"帳號 {a.AccountCode} 已被{string.Join("、", refs)}參照，無法刪除，請改用「停用」";
-        },
-    };
+            var (x, y) = (col.Display(a), col.Display(b));
+            if (decimal.TryParse(x, out var dx) && decimal.TryParse(y, out var dy)) return dx.CompareTo(dy);
+            return string.CompareOrdinal(x, y);
+        };
+        rows.Sort(asc ? cmp : (a, b) => cmp(b, a));
+    }
+
+    private void ToggleAllChecked(ChangeEventArgs e)
+    {
+        var on = e.Value is true;
+        foreach (var r in Visible) r.Checked = on;
+    }
+
+    // ── 操作 ─────────────────────────────────────────
+
+    private void DoQuery()
+    {
+        try
+        {
+            rows = AccountSvc.Query(q).Select(v => new RowVm { Account = v.Account, BankShortName = v.BankShortName }).ToList();
+            colFilters.Clear();
+            Say("success", "查詢成功");
+        }
+        catch (BusinessException e)
+        {
+            Say("error", e.Message);
+        }
+    }
+
+    private void OpenCreate()
+    {
+        newAcc = new BankAccount { DepositType = "1", LedgerType = "1", CurrencyType = "TWD", CurrencyCode = "NTD", IsSuspense = true };
+        createOpen = true;
+    }
+
+    private void DoCreate()
+    {
+        try
+        {
+            AccountSvc.Create(newAcc, Actor());
+            createOpen = false;
+            accountCodeOptions = AccountSvc.GetAccountCodeOptions();
+            DoQuery();
+            Say("success", $"儲存成功（新增帳號 {newAcc.AccountCode}）");
+        }
+        catch (BusinessException e)
+        {
+            Say("error", "儲存失敗", e.Message);
+        }
+    }
+
+    private void DoSave()
+    {
+        try
+        {
+            var targets = CheckedRows;
+            if (targets.Count == 0) throw new BusinessException("請先勾選項目再執行");
+            var count = AccountSvc.Save(targets.Select(r => r.Account).ToList(), Actor());
+            DoQuery();
+            Say("success", $"儲存成功（{count} 筆）");
+        }
+        catch (BusinessException e)
+        {
+            Say("error", "儲存失敗", e.Message);
+        }
+    }
+
+    private async Task DoDelete()
+    {
+        try
+        {
+            var targets = CheckedRows;
+            if (targets.Count == 0) throw new BusinessException("請先勾選項目再執行");
+            if (!await JS.InvokeAsync<bool>("confirm", $"確定刪除勾選的 {targets.Count} 筆帳號？")) return;
+            var count = AccountSvc.Delete(targets.Select(r => r.Account.Id).ToList(), Actor());
+            accountCodeOptions = AccountSvc.GetAccountCodeOptions();
+            DoQuery();
+            Say("success", $"刪除成功（{count} 筆）");
+        }
+        catch (BusinessException e)
+        {
+            Say("error", "刪除失敗", e.Message);
+        }
+    }
+
+    // ── 其他 ─────────────────────────────────────────
+
+    private void OnQueryCurrencyTypeChanged(ChangeEventArgs e)
+    {
+        q.CurrencyType = e.Value?.ToString() ?? "";
+        // 幣別依幣別類型連動：原選值不在新清單時清空
+        if (!string.IsNullOrEmpty(q.CurrencyCode) && QueryCurrencies.All(c => c.Code != q.CurrencyCode))
+            q.CurrencyCode = "";
+    }
+
+    /// <summary>日期輸入值（空字串→null）。</summary>
+    private static string? D(object? v)
+    {
+        var s = v?.ToString();
+        return string.IsNullOrEmpty(s) ? null : s;
+    }
+
+    private RenderFragment CodeOptions(string category) => @<text>
+        @foreach (var (val, label) in lookups.Codes.GetValueOrDefault(category) ?? [])
+        {
+            <option value="@val">@label</option>
+        }
+    </text>;
+
+    private User Actor() => UserState.CurrentUser ?? throw new BusinessException("尚未選擇操作者");
+
+    private void Say(string type, params string[] lines)
+    {
+        msgType = type;
+        msgLines = lines.ToList();
+    }
 }

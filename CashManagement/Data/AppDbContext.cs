@@ -13,6 +13,8 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     public DbSet<SequenceCounter> SequenceCounters => Set<SequenceCounter>();
     public DbSet<User> Users => Set<User>();
     public DbSet<AccountManager> AccountManagers => Set<AccountManager>();
+    public DbSet<Bank> Banks => Set<Bank>();
+    public DbSet<CodeMapEntry> CodeMaps => Set<CodeMapEntry>();
     public DbSet<Currency> Currencies => Set<Currency>();
     public DbSet<ExchangeRate> ExchangeRates => Set<ExchangeRate>();
     public DbSet<Holiday> Holidays => Set<Holiday>();
@@ -23,6 +25,11 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     protected override void OnModelCreating(ModelBuilder b)
     {
         b.Entity<BankAccount>().HasIndex(x => x.AccountCode).IsUnique();
+        b.Entity<BankAccount>().HasIndex(x => new { x.BankCode, x.AccountCode }).IsUnique(); // URS 檢核 C-i
+        b.Entity<BankAccount>().HasIndex(x => x.SubjectCode).IsUnique();                     // URS 檢核 C-ii
+
+        b.Entity<Bank>().HasIndex(x => x.BankCode).IsUnique();
+        b.Entity<CodeMapEntry>().HasIndex(x => new { x.Category, x.Code }).IsUnique();
 
         b.Entity<PassbookBalance>()
             .HasIndex(x => new { x.BalanceDate, x.AccountCode, x.Currency, x.ImportSeq }).IsUnique();

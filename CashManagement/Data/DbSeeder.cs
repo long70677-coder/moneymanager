@@ -57,6 +57,27 @@ public static class DbSeeder
             db.SaveChanges();
         }
 
+        if (!db.Banks.Any())
+        {
+            db.Banks.AddRange(
+                new Bank { HeadOfficeCode = "012", BankCode = "012", ShortName = "第一銀行" },
+                new Bank { HeadOfficeCode = "013", BankCode = "013", ShortName = "華南銀行" });
+            db.SaveChanges();
+        }
+
+        if (!db.CodeMaps.Any())
+        {
+            db.CodeMaps.AddRange(
+                Code("DEPOSIT_TYPE", "1", "活存"), Code("DEPOSIT_TYPE", "2", "支存"), Code("DEPOSIT_TYPE", "3", "綜存"),
+                Code("LEDGER_TYPE", "1", "不分紅"), Code("LEDGER_TYPE", "2", "分紅"), Code("LEDGER_TYPE", "3", "利變"), Code("LEDGER_TYPE", "4", "OIU"),
+                Code("CURRENCY_TYPE", "TWD", "台幣"), Code("CURRENCY_TYPE", "FOREIGN", "外幣"),
+                Code("FX_ACCOUNT_TYPE", "1", "一般帳戶"), Code("FX_ACCOUNT_TYPE", "2", "外幣保單"), Code("FX_ACCOUNT_TYPE", "3", "OIU"),
+                Code("INTEREST_PAYOUT", "1", "年領"), Code("INTEREST_PAYOUT", "2", "半年領"), Code("INTEREST_PAYOUT", "3", "季領"),
+                Code("INTEREST_PAYOUT", "4", "月領"), Code("INTEREST_PAYOUT", "5", "無"),
+                Code("INTEREST_DAYS", "1", "360天"), Code("INTEREST_DAYS", "2", "365天"));
+            db.SaveChanges();
+        }
+
         if (!db.Currencies.Any())
         {
             db.Currencies.AddRange(
@@ -111,8 +132,25 @@ public static class DbSeeder
         }
     }
 
+    private static int codeSeq;
+    private static CodeMapEntry Code(string category, string code, string label) =>
+        new() { Category = category, Code = code, Label = label, SortOrder = ++codeSeq };
+
+    private static int subjectSeq = 10000;
+
     private static BankAccount Acc(string code, string longCode, string bank, string name, string purpose, bool policy, string curType) =>
-        new() { AccountCode = code, AccountLongCode = longCode, BankCode = bank, AccountName = name, AccountPurpose = purpose, IsSuspense = true, IsPolicyAccount = policy, CurrencyType = curType };
+        new()
+        {
+            AccountCode = code, AccountLongCode = longCode, BankCode = bank, AccountName = name,
+            AccountPurpose = purpose, IsSuspense = true, IsPolicyAccount = policy, CurrencyType = curType,
+            // URS2.90.202 欄位（demo 值）
+            SortOrder = subjectSeq - 9999, SubjectCode = (++subjectSeq).ToString(),
+            DepositType = "1", LedgerType = "1",
+            CurrencyCode = curType == "TWD" ? "NTD" : "USD",
+            FxAccountType = curType == "TWD" ? null : (policy ? "2" : "1"),
+            BookingCurrency = policy && curType != "TWD" ? "USD" : "NTD",
+            OpenDate = "2020-01-01",
+        };
 
     private static PassbookBalance Pb(string date, string code, string cur, decimal bal) =>
         new() { BalanceDate = date, AccountCode = code, Currency = cur, Balance = bal, DataType = "FILE_IMPORT", IsReviewed = true, ReviewedBy = "Admin", ReviewedAt = DateTime.Now };

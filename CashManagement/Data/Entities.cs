@@ -18,20 +18,67 @@ public interface ISoftDelete
     bool IsActive { get; set; }
 }
 
-/// <summary>銀行存款帳號基本資料。</summary>
+/// <summary>銀行基本資料（URS2.90.201 先行最小版：供帳號頁下拉與分行簡稱）。</summary>
+public class Bank : IAuditable, ISoftDelete
+{
+    public int Id { get; set; }
+    public string HeadOfficeCode { get; set; } = "";    // 銀行總行代號
+    public string BankCode { get; set; } = "";          // 銀行代碼（unique，含分行）
+    public string ShortName { get; set; } = "";         // 銀行簡稱
+    public bool IsActive { get; set; } = true;
+    public string CreatedBy { get; set; } = "System";
+    public DateTime CreatedAt { get; set; } = DateTime.Now;
+    public string UpdatedBy { get; set; } = "System";
+    public DateTime UpdatedAt { get; set; } = DateTime.Now;
+}
+
+/// <summary>對照碼檔（URS 各下拉選單來源；Category+Code 唯一）。</summary>
+public class CodeMapEntry : IAuditable, ISoftDelete
+{
+    public int Id { get; set; }
+    public string Category { get; set; } = "";          // 類別：DEPOSIT_TYPE/LEDGER_TYPE/CURRENCY_TYPE/FX_ACCOUNT_TYPE/INTEREST_PAYOUT/INTEREST_DAYS
+    public string Code { get; set; } = "";              // 代碼（"1"、"2"…）
+    public string Label { get; set; } = "";             // 顯示名稱
+    public int SortOrder { get; set; }
+    public bool IsActive { get; set; } = true;
+    public string CreatedBy { get; set; } = "System";
+    public DateTime CreatedAt { get; set; } = DateTime.Now;
+    public string UpdatedBy { get; set; } = "System";
+    public DateTime UpdatedAt { get; set; } = DateTime.Now;
+}
+
+/// <summary>銀行存款帳號基本資料（URS2.90.202）。</summary>
 public class BankAccount : IAuditable, ISoftDelete
 {
     public int Id { get; set; }
-    public string AccountCode { get; set; } = "";       // 帳號短碼（unique）
-    public string AccountLongCode { get; set; } = "";   // 完整帳號
-    public string BankCode { get; set; } = "";
-    public string AccountName { get; set; } = "";
-    public string AccountPurpose { get; set; } = "";
+    public string AccountCode { get; set; } = "";       // 銀行帳號短碼（unique）
+    public string AccountLongCode { get; set; } = "";   // 銀行帳號長碼
+    public string BankCode { get; set; } = "";          // 銀行代碼（→ Bank）
+    public string AccountName { get; set; } = "";       // 帳戶名稱（URS 外；其他作業顯示用）
+    public string AccountPurpose { get; set; } = "";    // 帳號用途（URS 外）
+    public int SortOrder { get; set; }                  // 排列序號（必填）
+    public string DepositType { get; set; } = "1";      // 存款類別（對照碼 DEPOSIT_TYPE：1活存/2支存/3綜存）
+    public string CurrencyType { get; set; } = "TWD";   // 幣別類型：TWD台幣 | FOREIGN外幣
+    public string? CurrencyCode { get; set; }           // 幣別（→ Currencies）
+    public string SubjectCode { get; set; } = "";       // 銀存子目（5碼，unique）
+    public string LedgerType { get; set; } = "1";       // 帳冊別（LEDGER_TYPE：1不分紅/2分紅/3利變/4OIU）
+    public string? FxAccountType { get; set; }          // 外幣帳戶類型（FX_ACCOUNT_TYPE：1一般/2外幣保單/3OIU；幣別類型=外幣時必填）
+    public string BookingCurrency { get; set; } = "NTD"; // 記帳幣（推導：外幣保單=原幣，其餘 NTD）
     public bool IsSuspense { get; set; } = true;        // 暫收帳戶
-    public bool IsPolicyAccount { get; set; }           // 保單帳戶
-    public string CurrencyType { get; set; } = "TWD";   // TWD | FOREIGN
-    public string? ImportFileName { get; set; }         // 轉檔檔名（一檔一帳號）
-    public bool IsActive { get; set; } = true;          // 停用後不再進暫收/轉檔作業
+    public bool IsPolicyAccount { get; set; }           // 保單帳戶（由外幣帳戶類型=外幣保單推導；匯率恆 1 的依據）
+    public bool IsFedi { get; set; }                    // FEDI帳戶
+    public bool IsCompanyMain { get; set; }             // 公司主調度帳戶
+    public bool IsBankMain { get; set; }                // 同行主調度帳戶（同總行僅限一個）
+    public bool IsDraft { get; set; }                   // 票匯
+    public string InterestPayout { get; set; } = "2";   // 活存領息方式（INTEREST_PAYOUT：1年/2半年/3季/4月/5無；支存=5）
+    public string InterestDays { get; set; } = "1";     // 活存計息天數（INTEREST_DAYS：1=360天/2=365天）
+    public string? Memo { get; set; }                   // 備註
+    public string? OpenDate { get; set; }               // 開戶日期（必填）
+    public string? SuspendDate { get; set; }            // 停用日期（使用單位告知）
+    public string? BankCloseDate { get; set; }          // 銀行結清日期
+    public string? CompanyCloseDate { get; set; }       // 公司結清日期
+    public string? ImportFileName { get; set; }         // 轉檔檔名（FUN2.1.1 用，URS 外）
+    public bool IsActive { get; set; } = true;          // 帳號啟用；停用後不再進暫收/轉檔作業
     public string CreatedBy { get; set; } = "System";
     public DateTime CreatedAt { get; set; } = DateTime.Now;
     public string UpdatedBy { get; set; } = "System";

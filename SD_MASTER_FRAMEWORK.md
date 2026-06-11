@@ -23,7 +23,7 @@
 
 | 頁面 | 路由 | 主檔 | 套用方式 |
 |------|------|------|----------|
-| 銀行帳號基本資料 | `/master/accounts`（`/master` 同頁） | `bank_accounts` | `MasterPage` 全宣告式 |
+| 銀行帳號基本資料 | `/master/accounts`（`/master` 同頁） | `bank_accounts` | ⚠️ **已改版為 URS 四區版型**（URS2.90.202）：查詢區＋操作區（查詢/新增/刪除/儲存）＋訊息區＋顯示區（勾選列＋行內編輯＋欄頭 Excel 式篩選 `ColumnFilterDropdown`）。資料由「查詢」自伺服器取回，欄頭篩選對結果集過濾。此為使用者核可的目標版型，其餘主檔頁待確認後比照遷移 |
 | 使用者基本資料 | `/master/users` | `users` | `MasterPage` 全宣告式 |
 | 帳號維護權限 | `/master/permissions` | `account_managers` | **自訂版面**＋共用元件（主從式，見 §7） |
 | 幣別基本資料 | `/master/currencies` | `currencies` | `MasterPage` 全宣告式（軟刪除） |

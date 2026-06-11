@@ -1,0 +1,124 @@
+@* Excel 式欄頭篩選：漏斗鈕＋面板（昇冪/降冪、搜尋、全選、值核取清單、清除/確定）。
+   套用中以藍色漏斗標示；「確定」才生效（比照 Excel 自動篩選）。 *@
+
+<span class="inline-flex items-center gap-1 whitespace-nowrap">
+    <span>@Label</span>
+    <span class="relative inline-block">
+        <button @onclick="Toggle" @onclick:stopPropagation="true" title="篩選"
+                class="@($"w-5 h-5 rounded inline-flex items-center justify-center transition-colors {(IsFiltered ? "bg-[#2563EB] text-white" : "text-[#94a3b8] hover:bg-[#e2e8f0] hover:text-[#475569]")}")">
+            <span class="material-symbols-outlined text-[14px]">filter_alt</span>
+        </button>
+
+        @if (open)
+        {
+            <div class="fixed inset-0 z-40" @onclick="Close"></div>
+            <div class="absolute z-50 mt-1 left-0 w-60 bg-white border border-[#e2e8f0] rounded-xl shadow-xl text-left font-normal normal-case"
+                 @onclick:stopPropagation="true">
+                @if (OnSort.HasDelegate)
+                {
+                    <div class="px-2 pt-2 flex gap-1">
+                        <button @onclick="() => Sort(true)" class="flex-1 h-8 rounded-lg text-xs text-[#475569] hover:bg-[#f1f5f9] inline-flex items-center justify-center gap-1">
+                            <span class="material-symbols-outlined text-[15px]">arrow_upward</span>昇冪
+                        </button>
+                        <button @onclick="() => Sort(false)" class="flex-1 h-8 rounded-lg text-xs text-[#475569] hover:bg-[#f1f5f9] inline-flex items-center justify-center gap-1">
+                            <span class="material-symbols-outlined text-[15px]">arrow_downward</span>降冪
+                        </button>
+                    </div>
+                }
+                <div class="p-2">
+                    <input class="form-input h-8 w-full text-xs" placeholder="搜尋…" value="@search"
+                           @oninput="e => search = e.Value?.ToString() ?? string.Empty" />
+                </div>
+                <div class="px-2 pb-1 border-b border-[#f1f5f9]">
+                    <label class="flex items-center gap-2 px-1 py-1 text-xs text-[#0f172a] cursor-pointer hover:bg-[#f8fafc] rounded">
+                        <input type="checkbox" class="w-3.5 h-3.5 accent-[#2563EB]"
+                               checked="@VisibleValues.All(working.Contains)"
+                               @onchange="ToggleAll" />
+                        <span class="font-medium">(全選)</span>
+                    </label>
+                </div>
+                <div class="max-h-52 overflow-y-auto px-2 py-1">
+                    @foreach (var v in VisibleValues)
+                    {
+                        <label class="flex items-center gap-2 px-1 py-1 text-xs text-[#44474e] cursor-pointer hover:bg-[#f8fafc] rounded">
+                            <input type="checkbox" class="w-3.5 h-3.5 accent-[#2563EB]"
+                                   checked="@working.Contains(v)"
+                                   @onchange="() => ToggleValue(v)" />
+                            <span class="truncate">@(v.Length == 0 ? "(空白)" : v)</span>
+                        </label>
+                    }
+                    @if (VisibleValues.Count == 0)
+                    {
+                        <p class="px-1 py-2 text-xs text-[#9aa0ad]">無符合的值</p>
+                    }
+                </div>
+                <div class="px-2 py-2 border-t border-[#f1f5f9] flex justify-between gap-2">
+                    <button @onclick="ClearFilter" class="h-8 px-3 rounded-lg text-xs text-[#475569] hover:bg-[#f1f5f9]">清除篩選</button>
+                    <button @onclick="Apply" class="h-8 px-3 rounded-lg text-xs bg-[#2563EB] text-white hover:bg-[#1d4ed8]">確定</button>
+                </div>
+            </div>
+        }
+    </span>
+</span>
+
+@code {
+    [Parameter, EditorRequired] public string Label { get; set; } = "";
+    /// <summary>此欄目前資料的相異顯示值（由頁面提供，已排序）。</summary>
+    [Parameter, EditorRequired] public IReadOnlyList<string> Values { get; set; } = [];
+    /// <summary>已套用的篩選值集合；null＝未篩選（全顯示）。</summary>
+    [Parameter] public HashSet<string>? Selected { get; set; }
+    [Parameter] public EventCallback<HashSet<string>?> SelectedChanged { get; set; }
+    /// <summary>昇冪(true)/降冪(false) 排序；未掛則不顯示排序鈕。</summary>
+    [Parameter] public EventCallback<bool> OnSort { get; set; }
+
+    private bool open;
+    private string search = "";
+    private HashSet<string> working = [];
+
+    private bool IsFiltered => Selected != null;
+
+    private List<string> VisibleValues => string.IsNullOrEmpty(search)
+        ? Values.ToList()
+        : Values.Where(v => v.Contains(search, StringComparison.OrdinalIgnoreCase)).ToList();
+
+    private void Toggle()
+    {
+        open = !open;
+        if (!open) return;
+        search = "";
+        working = Selected != null ? [.. Selected] : [.. Values];
+    }
+
+    private void Close() => open = false;
+
+    private void ToggleValue(string v)
+    {
+        if (!working.Remove(v)) working.Add(v);
+    }
+
+    private void ToggleAll()
+    {
+        if (VisibleValues.All(working.Contains)) working.ExceptWith(VisibleValues);
+        else working.UnionWith(VisibleValues);
+    }
+
+    private async Task Apply()
+    {
+        open = false;
+        // 全部勾選＝視同未篩選
+        var all = Values.All(working.Contains) && working.Count >= Values.Count;
+        await SelectedChanged.InvokeAsync(all ? null : [.. working]);
+    }
+
+    private async Task ClearFilter()
+    {
+        open = false;
+        await SelectedChanged.InvokeAsync(null);
+    }
+
+    private async Task Sort(bool asc)
+    {
+        open = false;
+        await OnSort.InvokeAsync(asc);
+    }
+}
