@@ -1,0 +1,48 @@
+@page "/master"
+@page "/master/accounts"
+
+<PageTitle>銀行帳號基本資料 - 銀行存款資金管理系統</PageTitle>
+
+<PageHeader Group="設定維護" Title="銀行帳號基本資料"
+            Description="維護銀行存款帳號主檔。帳號被存摺餘額／暫收交易／維護權限參照後不可刪除，請改用停用；停用帳號不再參與轉檔與暫收作業。" />
+
+<MasterPage TEntity="BankAccount" Def="@def" />
+
+@code {
+    private static readonly MasterDef<BankAccount> def = new()
+    {
+        Title = "銀行帳號",
+        Icon = "account_balance",
+        ExportName = "銀行帳號基本資料",
+        Fields =
+        [
+            new() { Key = "accountCode", Label = "帳號短碼", Member = a => a.AccountCode,
+                    Required = true, InUniqueKey = true, Mono = true, Editable = false,
+                    Placeholder = "例：ACT-001", FormHint = "業務主鍵，建立後不可修改" },
+            new() { Key = "accountLongCode", Label = "完整帳號", Member = a => a.AccountLongCode,
+                    Required = true, Mono = true, Placeholder = "例：012-0001-00001-001" },
+            new() { Key = "bankCode", Label = "銀行代碼", Member = a => a.BankCode,
+                    Required = true, Mono = true, Placeholder = "例：012",
+                    FormHint = "轉檔時以銀行代碼＋幣別比對格式設定" },
+            new() { Key = "accountName", Label = "帳戶名稱", Member = a => a.AccountName, Required = true },
+            new() { Key = "accountPurpose", Label = "帳號用途", Member = a => a.AccountPurpose },
+            new() { Key = "importFileName", Label = "轉檔檔名", Member = a => a.ImportFileName,
+                    Mono = true, Placeholder = "例：ACT-001.csv", FormHint = "餘額檔以檔名對應帳號（一檔一帳號）" },
+            new() { Key = "currencyType", Label = "幣別屬性", Member = a => a.CurrencyType, Kind = FieldKind.Select,
+                    Options = [("TWD", "本國幣 (TWD)"), ("FOREIGN", "外幣")] },
+            new() { Key = "isSuspense", Label = "暫收帳戶", Member = a => a.IsSuspense, Kind = FieldKind.Bool },
+            new() { Key = "isPolicyAccount", Label = "保單帳戶", Member = a => a.IsPolicyAccount, Kind = FieldKind.Bool,
+                    FormHint = "保單帳戶匯率固定為 1" },
+            new() { Key = "isActive", Label = "啟用", Member = a => a.IsActive, Kind = FieldKind.Bool,
+                    ShowInForm = false },
+        ],
+        DeleteBlockReason = (db, a) =>
+        {
+            var refs = new List<string>();
+            if (db.PassbookBalances.Any(p => p.AccountCode == a.AccountCode)) refs.Add("存摺餘額");
+            if (db.SuspenseTransactions.Any(t => t.AccountCode == a.AccountCode)) refs.Add("暫收交易");
+            if (db.AccountManagers.Any(m => m.AccountCode == a.AccountCode)) refs.Add("帳號維護權限");
+            return refs.Count == 0 ? null : $"帳號 {a.AccountCode} 已被{string.Join("、", refs)}參照，無法刪除，請改用「停用」";
+        },
+    };
+}

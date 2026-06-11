@@ -72,7 +72,12 @@ bank_accounts ──< account_managers >── users   (account_code FK / user_i
 | is_policy_account | INTEGER | DEFAULT 0 | 是否保單帳戶（影響匯率固定為 1） |
 | currency_type | TEXT | DEFAULT 'TWD' | 幣別類型：TWD / FOREIGN |
 | `import_file_name` | TEXT | （FUN2.1.1 新增） | 該帳號餘額檔的檔名（一檔一帳號；轉檔時以檔名對到帳號） |
-| created_at / updated_at | TEXT | DEFAULT datetime('now') | 建立 / 異動時間 |
+| `is_active` | INTEGER | DEFAULT 1（維護框架新增） | 啟用旗標：停用後不再參與餘額維護/轉檔比對/暫收立帳 |
+| created_by / created_at | TEXT | （維護框架新增 created_by） | 建立軌跡 |
+| updated_by / updated_at | TEXT | （維護框架新增 updated_by） | 異動軌跡 |
+
+> 維護規則（SD_MASTER_FRAMEWORK.md）：account_code 為業務主鍵，建立後不可修改；
+> 被存摺餘額／暫收交易／帳號維護權限參照的帳號不可刪除，只能停用。
 
 > FUN2.1.1 轉檔時，profile **不另存欄位**，由系統依「`bank_code` ＋ 帳號幣別」即時帶出（精確幣別→`ZZZ` fallback），唯讀不可手改。
 
@@ -194,10 +199,15 @@ bank_accounts ──< account_managers >── users   (account_code FK / user_i
 | 欄位 | 型別 | 鍵/約束 | 說明 |
 |------|------|---------|------|
 | id | INTEGER | PK | 流水號 |
-| user_code | TEXT | UNIQUE, NOT NULL | 使用者代號 |
+| user_code | TEXT | UNIQUE, NOT NULL | 使用者代號（建立後不可修改） |
 | user_name | TEXT | NOT NULL | 姓名 |
 | role | TEXT | NOT NULL DEFAULT 'STAFF' | 角色：STAFF（經辦）/ MANAGER（主管） |
-| created_at | TEXT | | 建立時間 |
+| `is_active` | INTEGER | DEFAULT 1（維護框架新增） | 啟用旗標：停用後不可切換為操作者、權限視同無 |
+| created_by / created_at | TEXT | （維護框架新增 created_by） | 建立軌跡 |
+| updated_by / updated_at | TEXT | （維護框架新增） | 異動軌跡 |
+
+> 業務規則：系統至少保留一位「啟用中的主管」（停用/降級最後一位主管會被阻擋）；
+> 被 `account_managers` 參照的使用者不可刪除，只能停用。
 
 ### 9. `account_managers`（帳號維護人員）
 
@@ -207,10 +217,13 @@ bank_accounts ──< account_managers >── users   (account_code FK / user_i
 | account_code | TEXT | NOT NULL, FK→bank_accounts | 帳號短碼 |
 | user_id | INTEGER | NOT NULL, FK→users | 使用者 |
 | manager_type | TEXT | NOT NULL DEFAULT 'PRIMARY' | PRIMARY（主辦）/ AGENT（代理） |
-| valid_from | TEXT | | 代理生效日（NULL=不限） |
+| valid_from | TEXT | | 代理生效日（NULL=不限；主辦不適用，儲存時清空） |
 | valid_to | TEXT | | 代理截止日（NULL=不限） |
-| created_at | TEXT | | 建立時間 |
+| created_by / created_at | TEXT | （維護框架新增 created_by） | 建立軌跡 |
+| updated_by / updated_at | TEXT | （維護框架新增） | 異動軌跡 |
 | — | — | **UNIQUE(account_code, user_id, manager_type)** | 唯一鍵 |
+
+> 指派紀錄＝關聯資料，允許實體刪除（不做軟刪除）；指派對象限啟用中的使用者與帳號。
 
 > 權限判斷對應 SA「同時考量主維護人 + 代理維護人 + 代理有效期間」。`getAccessibleAccountCodes(db, userId, refDate)` 依參考日期（暫收日期）回傳可存取帳號；主管回傳 null（全部）。
 

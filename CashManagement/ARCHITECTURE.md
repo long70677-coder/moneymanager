@@ -54,14 +54,21 @@ CashManagement/
 │   ├─ BalanceService.cs   # FUN2.1.1：兩餘額並陳/人工調整/全批覆核
 │   ├─ IngestService.cs    # FUN2.1.1：轉檔三段式 Parse→Map→Validate+Write、試轉預覽
 │   ├─ BankFormatService.cs
-│   ├─ MasterDataService.cs
+│   ├─ MasterDataService.cs# 帳號維護權限（主辦/代理指派；主從式自訂頁）
+│   ├─ Master/             # 基本資料維護框架：MasterDef（欄位 metadata）＋ MasterMaintenanceService
+│   │                      #（泛型 CRUD/篩選/停用/匯出；見 ../SD_MASTER_FRAMEWORK.md）
 │   └─ Parsing/            # DelimitedParser、MappingHelper（民國年/金額）、ParsedProfile、ParserRegistry
 ├─ Components/
 │   ├─ Layout/MainLayout.razor   # 側欄+頂部列+操作者切換
-│   ├─ Shared/                   # PageHeader/Toast/Modal/EmptyState/StatCard
-│   └─ Pages/                    # Suspense / Balances / Master / BankFormats
+│   ├─ Shared/                   # PageHeader/Toast/Modal/EmptyState/StatCard/MasterPage（框架共用畫面）
+│   └─ Pages/                    # Suspense / Balances / MasterAccounts / MasterUsers / MasterPermissions / BankFormats
 └─ App_Data/cash.db            # 開發用 SQLite（git 忽略）
 ```
+
+### 基本資料維護
+新增一個基本資料維護畫面＝實體（掛 `IAuditable`/`ISoftDelete`）＋一份 `MasterDef` 欄位定義＋`<MasterPage>` 一行，
+查詢/篩選/CRUD/停用/匯出 CSV 全自動具備；規格與 SOP 見 `../SD_MASTER_FRAMEWORK.md`。
+維護動作限 MANAGER；被參照的主檔不可刪除、只能停用（停用帳號/使用者自動排除於暫收、轉檔、權限判斷之外）。
 
 ## 4. 與原型 (suspense-app) 的關係
 

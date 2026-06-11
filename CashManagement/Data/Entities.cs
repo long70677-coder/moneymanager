@@ -3,8 +3,23 @@ namespace CashManagement.Data;
 // 業務日期一律以 "yyyy-MM-dd" 字串儲存（避免時區問題、利於跨 provider 比較）。
 // 金額一律 decimal。
 
+/// <summary>審計欄位（基本資料維護框架自動蓋值）。</summary>
+public interface IAuditable
+{
+    string CreatedBy { get; set; }
+    DateTime CreatedAt { get; set; }
+    string UpdatedBy { get; set; }
+    DateTime UpdatedAt { get; set; }
+}
+
+/// <summary>軟刪除：被交易資料參照的主檔不可實體刪除，以停用取代。</summary>
+public interface ISoftDelete
+{
+    bool IsActive { get; set; }
+}
+
 /// <summary>銀行存款帳號基本資料。</summary>
-public class BankAccount
+public class BankAccount : IAuditable, ISoftDelete
 {
     public int Id { get; set; }
     public string AccountCode { get; set; } = "";       // 帳號短碼（unique）
@@ -16,7 +31,10 @@ public class BankAccount
     public bool IsPolicyAccount { get; set; }           // 保單帳戶
     public string CurrencyType { get; set; } = "TWD";   // TWD | FOREIGN
     public string? ImportFileName { get; set; }         // 轉檔檔名（一檔一帳號）
+    public bool IsActive { get; set; } = true;          // 停用後不再進暫收/轉檔作業
+    public string CreatedBy { get; set; } = "System";
     public DateTime CreatedAt { get; set; } = DateTime.Now;
+    public string UpdatedBy { get; set; } = "System";
     public DateTime UpdatedAt { get; set; } = DateTime.Now;
 }
 
@@ -132,25 +150,32 @@ public class SequenceCounter
 }
 
 /// <summary>使用者。</summary>
-public class User
+public class User : IAuditable, ISoftDelete
 {
     public int Id { get; set; }
     public string UserCode { get; set; } = "";          // unique
     public string UserName { get; set; } = "";
     public string Role { get; set; } = "STAFF";         // STAFF | MANAGER
+    public bool IsActive { get; set; } = true;          // 停用後不可登入/切換、權限視同無
+    public string CreatedBy { get; set; } = "System";
     public DateTime CreatedAt { get; set; } = DateTime.Now;
+    public string UpdatedBy { get; set; } = "System";
+    public DateTime UpdatedAt { get; set; } = DateTime.Now;
 }
 
-/// <summary>帳號維護權限（主辦/代理，代理可設有效期間）。</summary>
-public class AccountManager
+/// <summary>帳號維護權限（主辦/代理，代理可設有效期間）。指派紀錄＝關聯資料，允許實體刪除。</summary>
+public class AccountManager : IAuditable
 {
     public int Id { get; set; }
     public string AccountCode { get; set; } = "";
     public int UserId { get; set; }
     public string ManagerType { get; set; } = "PRIMARY"; // PRIMARY | AGENT
-    public string? ValidFrom { get; set; }               // yyyy-MM-dd；null=不限
+    public string? ValidFrom { get; set; }               // yyyy-MM-dd；null=不限（僅代理適用）
     public string? ValidTo { get; set; }
+    public string CreatedBy { get; set; } = "System";
     public DateTime CreatedAt { get; set; } = DateTime.Now;
+    public string UpdatedBy { get; set; } = "System";
+    public DateTime UpdatedAt { get; set; } = DateTime.Now;
 }
 
 /// <summary>銀行格式設定（轉檔 profile）。鍵=銀行+幣別（幣別可 ZZZ 共用）+版本。</summary>

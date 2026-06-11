@@ -115,7 +115,7 @@ public class SuspenseService(IDbContextFactory<AppDbContext> factory)
 
         // 暫收帳戶（NTD→TWD、其餘→FOREIGN），依權限過濾
         var curType = currency == "NTD" ? "TWD" : "FOREIGN";
-        var accounts = db.BankAccounts.AsNoTracking().Where(a => a.IsSuspense && a.CurrencyType == curType).ToList();
+        var accounts = db.BankAccounts.AsNoTracking().Where(a => a.IsActive && a.IsSuspense && a.CurrencyType == curType).ToList();
 
         var accessible = PermissionService.GetAccessibleAccountCodes(db, userId, suspenseDate);
         if (accessible != null)

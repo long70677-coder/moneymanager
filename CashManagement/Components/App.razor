@@ -31,6 +31,15 @@
 <body class="min-h-screen flex flex-col bg-[#F3F4F6] text-[#111827]" style="font-family:'Noto Sans TC',sans-serif">
     <Routes @rendermode="InteractiveServer" />
     <script src="_framework/blazor.web.js"></script>
+    <script>
+        // 框架共用：前端觸發檔案下載（基本資料匯出 CSV 等）
+        window.appDownload = (fileName, base64, mime) => {
+            const a = document.createElement('a');
+            a.href = `data:${mime};base64,${base64}`;
+            a.download = fileName;
+            a.click();
+        };
+    </script>
 </body>
 
 </html>

@@ -1,0 +1,492 @@
+@* 基本資料維護共用畫面：篩選列＋表格（排序/分頁）＋新增/修改 Modal＋刪除/停用＋匯出 CSV。
+   一份 MasterDef 欄位定義驅動全部行為（SD_MASTER_FRAMEWORK.md）。 *@
+@typeparam TEntity where TEntity : class, new()
+@using System.Text
+@using System.Reflection
+@using CashManagement.Services.Master
+@inject MasterMaintenanceService Svc
+@inject CurrentUserState UserState
+@inject IJSRuntime JS
+@implements IDisposable
+
+@if (msg != null)
+{
+    <Toast Type="@msg.Value.Type" Text="@msg.Value.Text" OnClose="() => msg = null" />
+}
+
+<section class="app-card overflow-hidden">
+    <div class="px-5 py-4 flex items-center gap-3 border-b border-[#eef0f4]">
+        <span class="w-8 h-8 rounded-lg bg-[#eff4ff] text-[#2563EB] flex items-center justify-center shrink-0">
+            <span class="material-symbols-outlined text-[18px]">@Def.Icon</span>
+        </span>
+        <h3 class="text-sm font-semibold text-[#0f172a]">@Def.Title</h3>
+        <span class="text-xs text-[#7a7d85] bg-[#f1f5f9] px-2.5 py-1 rounded-full">共 @rows.Count 筆</span>
+        <div class="ml-auto flex items-center gap-2">
+            <button @onclick="Export" class="btn btn-outline btn-sm" disabled="@(rows.Count == 0)">
+                <span class="material-symbols-outlined text-[17px]">download</span>匯出 CSV
+            </button>
+            @if (IsManager)
+            {
+                <button @onclick="OpenCreate" class="btn btn-primary btn-sm">
+                    <span class="material-symbols-outlined text-[17px]">add</span>新增
+                </button>
+            }
+        </div>
+    </div>
+
+    @* 篩選列 *@
+    <div class="px-5 py-4 border-b border-[#eef0f4] bg-[#fafbfd]">
+        <div class="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-6 gap-3">
+            @foreach (var f in Def.FilterFields)
+            {
+                var fromKey = f.Key + "__from";
+                var toKey = f.Key + "__to";
+                <div class="flex flex-col gap-1">
+                    <label class="text-[11px] font-medium text-[#64748b]">@f.Label</label>
+                    @switch (f.Kind)
+                    {
+                        case FieldKind.Bool:
+                            <select class="form-input h-9 text-xs" value="@F(f.Key)"
+                                    @onchange="e => OnFilter(f.Key, e.Value?.ToString())">
+                                <option value="">全部</option>
+                                <option value="true">是</option>
+                                <option value="false">否</option>
+                            </select>
+                            break;
+                        case FieldKind.Select:
+                            <select class="form-input h-9 text-xs" value="@F(f.Key)"
+                                    @onchange="e => OnFilter(f.Key, e.Value?.ToString())">
+                                <option value="">全部</option>
+                                @foreach (var o in f.Options ?? [])
+                                {
+                                    <option value="@o.Value">@o.Label</option>
+                                }
+                            </select>
+                            break;
+                        case FieldKind.Date:
+                            <div class="flex items-center gap-1">
+                                <input type="date" class="form-input h-9 text-xs flex-1 min-w-0" value="@F(fromKey)"
+                                       @onchange="e => OnFilter(fromKey, e.Value?.ToString())" />
+                                <span class="text-[#9aa0ad] text-xs">~</span>
+                                <input type="date" class="form-input h-9 text-xs flex-1 min-w-0" value="@F(toKey)"
+                                       @onchange="e => OnFilter(toKey, e.Value?.ToString())" />
+                            </div>
+                            break;
+                        default:
+                            <input class="form-input h-9 text-xs" value="@F(f.Key)" placeholder="包含…"
+                                   @onchange="e => OnFilter(f.Key, e.Value?.ToString())" />
+                            break;
+                    }
+                </div>
+            }
+            <div class="flex items-end">
+                <button @onclick="ClearFilters" class="btn btn-outline btn-sm w-full" disabled="@(filters.Count == 0)">
+                    <span class="material-symbols-outlined text-[16px]">filter_alt_off</span>清除篩選
+                </button>
+            </div>
+        </div>
+    </div>
+
+    @* 資料表 *@
+    @if (rows.Count == 0)
+    {
+        <EmptyState Icon="@Def.Icon" Title="查無資料" Hint="@(filters.Count > 0 ? "調整或清除篩選條件後再試。" : "尚無資料，請點右上角「新增」。")" />
+    }
+    else
+    {
+        <div class="overflow-x-auto w-full">
+            <table class="w-full text-left border-collapse min-w-max">
+                <thead class="bg-[#f8fafc] border-b border-[#e6e8ef] text-xs font-semibold text-[#475569]">
+                    <tr>
+                        @foreach (var f in Def.ListFields)
+                        {
+                            <th class="@($"px-4 py-3 whitespace-nowrap cursor-pointer select-none hover:text-[#2563EB] {(f.Kind == FieldKind.Bool ? "text-center" : "")}")"
+                                @onclick="() => SortBy(f.Key)">
+                                @f.Label
+                                @if (sortKey == f.Key)
+                                {
+                                    <span class="material-symbols-outlined text-[14px] align-middle">@(sortAsc ? "arrow_upward" : "arrow_downward")</span>
+                                }
+                            </th>
+                        }
+                        @if (IsManager)
+                        {
+                            <th class="px-4 py-3 text-right whitespace-nowrap">操作</th>
+                        }
+                    </tr>
+                </thead>
+                <tbody class="text-sm divide-y divide-[#eef0f4]">
+                    @foreach (var row in PageRows)
+                    {
+                        var inactive = row is ISoftDelete { IsActive: false };
+                        <tr class="@($"hover:bg-[#f8f9fc] transition-colors {(inactive ? "opacity-50" : "")}")">
+                            @foreach (var f in Def.ListFields)
+                            {
+                                <td class="@CellCls(f)">
+                                    @if (f.Kind == FieldKind.Bool)
+                                    {
+                                        @if (f.GetValue(row) is true)
+                                        {
+                                            <span class="material-symbols-outlined text-[18px] text-[#15803d]">check_circle</span>
+                                        }
+                                        else
+                                        {
+                                            <span class="text-[#cbd5e1]">—</span>
+                                        }
+                                    }
+                                    else if (f.Kind == FieldKind.Select)
+                                    {
+                                        <span class="px-2 py-0.5 bg-[#f1f5f9] text-[#475569] rounded-full text-xs">@f.DisplayValue(row)</span>
+                                    }
+                                    else
+                                    {
+                                        @f.DisplayValue(row)
+                                    }
+                                </td>
+                            }
+                            @if (IsManager)
+                            {
+                                <td class="px-4 py-2.5 text-right whitespace-nowrap">
+                                    <button @onclick="() => OpenEdit(row)"
+                                            class="inline-flex items-center gap-0.5 text-[#2563EB] hover:bg-[#eff6ff] rounded-md px-2 py-1 text-xs transition-colors">
+                                        <span class="material-symbols-outlined text-[15px]">edit</span>編輯
+                                    </button>
+                                    @if (row is ISoftDelete sd)
+                                    {
+                                        <button @onclick="() => ToggleActive(row, !sd.IsActive)"
+                                                class="@($"inline-flex items-center gap-0.5 rounded-md px-2 py-1 text-xs transition-colors {(sd.IsActive ? "text-[#b45309] hover:bg-[#fffbeb]" : "text-[#15803d] hover:bg-[#f0fdf4]")}")">
+                                            <span class="material-symbols-outlined text-[15px]">@(sd.IsActive ? "block" : "restart_alt")</span>@(sd.IsActive ? "停用" : "啟用")
+                                        </button>
+                                    }
+                                    <button @onclick="() => DeleteRow(row)"
+                                            class="inline-flex items-center gap-0.5 text-[#b91c1c] hover:bg-[#fef2f2] rounded-md px-2 py-1 text-xs transition-colors">
+                                        <span class="material-symbols-outlined text-[15px]">delete</span>刪除
+                                    </button>
+                                </td>
+                            }
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+        @if (PageCount > 1)
+        {
+            <div class="px-5 py-3 border-t border-[#eef0f4] flex items-center justify-end gap-3 text-xs text-[#64748b]">
+                <span>第 @(pageIndex + 1)／@PageCount 頁</span>
+                <button class="btn btn-outline btn-sm" disabled="@(pageIndex == 0)" @onclick="() => pageIndex--">
+                    <span class="material-symbols-outlined text-[16px]">chevron_left</span>
+                </button>
+                <button class="btn btn-outline btn-sm" disabled="@(pageIndex >= PageCount - 1)" @onclick="() => pageIndex++">
+                    <span class="material-symbols-outlined text-[16px]">chevron_right</span>
+                </button>
+            </div>
+        }
+    }
+</section>
+
+@* 新增／修改 Modal *@
+@if (formOpen)
+{
+    <Modal Icon="@(isNew ? "add_circle" : "edit")" OnClose="CloseForm">
+        <Title>@(isNew ? $"新增{Def.Title}" : $"修改{Def.Title}")</Title>
+        <ChildContent>
+            <div class="p-5 grid grid-cols-1 md:grid-cols-2 gap-4">
+                @foreach (var f in Def.FormFields)
+                {
+                    var enabled = isNew ? f.EditableOnCreate : f.Editable;
+                    <div class="flex flex-col gap-1.5">
+                        <label class="text-xs font-medium text-[#44474e]">
+                            @f.Label
+                            @if (f.Required)
+                            {
+                                <span class="text-[#dc2626]">*</span>
+                            }
+                        </label>
+                        @switch (f.Kind)
+                        {
+                            case FieldKind.Bool:
+                                <label class="flex items-center gap-2 h-10 cursor-pointer">
+                                    <input type="checkbox" class="w-4 h-4 accent-[#2563EB]"
+                                           checked="@(formVals.GetValueOrDefault(f.Key) == "true")"
+                                           disabled="@(!enabled)"
+                                           @onchange="e => SetFormBool(f.Key, e.Value)" />
+                                    <span class="text-sm text-[#44474e]">是</span>
+                                </label>
+                                break;
+                            case FieldKind.Select:
+                                <select class="form-input" disabled="@(!enabled)" value="@formVals.GetValueOrDefault(f.Key)"
+                                        @onchange="e => SetForm(f.Key, e.Value)">
+                                    @foreach (var o in f.Options ?? [])
+                                    {
+                                        <option value="@o.Value">@o.Label</option>
+                                    }
+                                </select>
+                                break;
+                            case FieldKind.Date:
+                                <input type="date" class="form-input" disabled="@(!enabled)" value="@formVals.GetValueOrDefault(f.Key)"
+                                       @onchange="e => SetForm(f.Key, e.Value)" />
+                                break;
+                            case FieldKind.Number:
+                                <input type="number" class="form-input" disabled="@(!enabled)" value="@formVals.GetValueOrDefault(f.Key)"
+                                       @onchange="e => SetForm(f.Key, e.Value)" />
+                                break;
+                            default:
+                                <input class="form-input" disabled="@(!enabled)" value="@formVals.GetValueOrDefault(f.Key)"
+                                       placeholder="@f.Placeholder"
+                                       @onchange="e => SetForm(f.Key, e.Value)" />
+                                break;
+                        }
+                        @if (f.FormHint != null)
+                        {
+                            <p class="text-[11px] text-[#9aa0ad]">@f.FormHint</p>
+                        }
+                    </div>
+                }
+            </div>
+        </ChildContent>
+        <Footer>
+            <button @onclick="CloseForm" class="btn btn-outline">取消</button>
+            <button @onclick="Save" class="btn btn-primary">
+                <span class="material-symbols-outlined text-[18px]">@(isNew ? "add" : "save")</span>
+                @(isNew ? "新增" : "儲存修改")
+            </button>
+        </Footer>
+    </Modal>
+}
+
+@code {
+    [Parameter, EditorRequired] public MasterDef<TEntity> Def { get; set; } = default!;
+    /// <summary>資料異動成功後回呼（新增/修改/刪除/停用），供頁面同步相依狀態（如操作者切換器）。</summary>
+    [Parameter] public EventCallback OnDataChanged { get; set; }
+
+    private const int PageSize = 50;
+    private static readonly PropertyInfo IdProp = typeof(TEntity).GetProperty("Id")!;
+
+    private readonly Dictionary<string, string> filters = [];
+    private List<TEntity> rows = [];
+    private string? sortKey;
+    private bool sortAsc = true;
+    private int pageIndex;
+
+    private bool formOpen;
+    private bool isNew;
+    private int editingId;
+    private Dictionary<string, string> formVals = [];
+
+    private (string Type, string Text)? msg;
+
+    private bool IsManager => UserState.CurrentUser?.Role == Roles.Manager;
+    private string F(string key) => filters.GetValueOrDefault(key) ?? "";
+
+    protected override void OnInitialized()
+    {
+        UserState.OnChange += HandleUserChanged;
+        Reload();
+    }
+
+    public void Dispose() => UserState.OnChange -= HandleUserChanged;
+    private void HandleUserChanged() => InvokeAsync(StateHasChanged);
+
+    private void Reload()
+    {
+        try
+        {
+            rows = Svc.Query(Def, filters);
+            ApplySort();
+            pageIndex = Math.Clamp(pageIndex, 0, Math.Max(0, PageCount - 1));
+        }
+        catch (BusinessException e)
+        {
+            Show("error", e.Message);
+        }
+    }
+
+    // ── 篩選 ─────────────────────────────────────────────
+
+    private void OnFilter(string key, string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value)) filters.Remove(key);
+        else filters[key] = value.Trim();
+        pageIndex = 0;
+        Reload();
+    }
+
+    private void ClearFilters()
+    {
+        filters.Clear();
+        pageIndex = 0;
+        Reload();
+    }
+
+    // ── 排序／分頁 ────────────────────────────────────────
+
+    private static readonly IComparer<object?> ValueCmp = Comparer<object?>.Create((a, b) =>
+        (a, b) switch
+        {
+            (null, null) => 0,
+            (null, _) => -1,
+            (_, null) => 1,
+            (IComparable ca, _) when a.GetType() == b.GetType() => ca.CompareTo(b),
+            _ => string.CompareOrdinal(a.ToString(), b.ToString()),
+        });
+
+    private void SortBy(string key)
+    {
+        if (sortKey == key) sortAsc = !sortAsc;
+        else { sortKey = key; sortAsc = true; }
+        ApplySort();
+    }
+
+    private void ApplySort()
+    {
+        var f = sortKey == null ? null : Def.ListFields.FirstOrDefault(x => x.Key == sortKey);
+        if (f == null) return;
+        rows = (sortAsc ? rows.OrderBy(f.GetValue, ValueCmp) : rows.OrderByDescending(f.GetValue, ValueCmp)).ToList();
+    }
+
+    private int PageCount => (rows.Count + PageSize - 1) / PageSize;
+    private IEnumerable<TEntity> PageRows => rows.Skip(pageIndex * PageSize).Take(PageSize);
+
+    private static string CellCls(MasterField<TEntity> f) =>
+        $"px-4 py-2.5 text-[#44474e] {(f.Kind == FieldKind.Bool ? "text-center" : "")} {(f.Mono ? "font-mono tabular-nums text-xs" : "")}";
+
+    // ── 表單 ─────────────────────────────────────────────
+
+    private void OpenCreate()
+    {
+        isNew = true;
+        editingId = 0;
+        formVals = BuildFormVals(new TEntity());
+        formOpen = true;
+    }
+
+    private void OpenEdit(TEntity row)
+    {
+        isNew = false;
+        editingId = (int)(IdProp.GetValue(row) ?? 0);
+        formVals = BuildFormVals(row);
+        formOpen = true;
+    }
+
+    private Dictionary<string, string> BuildFormVals(TEntity e) =>
+        Def.FormFields.ToDictionary(f => f.Key, f => f.GetValue(e) switch
+        {
+            null => f.Kind == FieldKind.Select ? (f.Options?.FirstOrDefault().Value ?? "") : "",
+            bool b => b ? "true" : "false",
+            var v => v.ToString() ?? "",
+        });
+
+    private void CloseForm() => formOpen = false;
+
+    private void SetForm(string key, object? value) => formVals[key] = value?.ToString() ?? "";
+    private void SetFormBool(string key, object? value) => formVals[key] = value is true ? "true" : "false";
+
+    private void Save()
+    {
+        try
+        {
+            var e = new TEntity();
+            IdProp.SetValue(e, editingId);
+            foreach (var f in Def.FormFields)
+            {
+                var prop = f.MemberProperty;
+                if (prop == null) continue;
+                prop.SetValue(e, ConvertRaw(f, prop, formVals.GetValueOrDefault(f.Key) ?? ""));
+            }
+
+            if (isNew) Svc.Create(Def, e, Actor());
+            else Svc.Update(Def, e, Actor());
+
+            Show("success", isNew ? $"已新增{Def.Title}" : $"已更新{Def.Title}");
+            formOpen = false;
+            Reload();
+            _ = OnDataChanged.InvokeAsync();
+        }
+        catch (BusinessException ex)
+        {
+            Show("error", ex.Message);
+        }
+    }
+
+    private static object? ConvertRaw(MasterField<TEntity> f, PropertyInfo prop, string raw)
+    {
+        var t = Nullable.GetUnderlyingType(prop.PropertyType) ?? prop.PropertyType;
+        if (t == typeof(bool)) return raw == "true";
+        if (t == typeof(int))
+            return int.TryParse(raw, out var i) ? i : throw new BusinessException($"「{f.Label}」格式錯誤");
+        if (t == typeof(decimal))
+            return decimal.TryParse(raw, out var d) ? d : throw new BusinessException($"「{f.Label}」格式錯誤");
+        // 字串：空值且屬性可為 null（宣告為 string?）時存 null，避免空字串參與比對
+        if (raw.Length == 0 && IsNullableString(prop)) return null;
+        return raw;
+    }
+
+    private static bool IsNullableString(PropertyInfo prop) =>
+        prop.PropertyType == typeof(string) &&
+        new NullabilityInfoContext().Create(prop).WriteState == NullabilityState.Nullable;
+
+    // ── 刪除／停用 ────────────────────────────────────────
+
+    private async Task DeleteRow(TEntity row)
+    {
+        if (!await JS.InvokeAsync<bool>("confirm", $"確定刪除這筆{Def.Title}？")) return;
+        try
+        {
+            Svc.Delete(Def, (int)(IdProp.GetValue(row) ?? 0), Actor());
+            Show("success", "已刪除");
+            Reload();
+            await OnDataChanged.InvokeAsync();
+        }
+        catch (BusinessException ex)
+        {
+            Show("error", ex.Message);
+        }
+    }
+
+    private async Task ToggleActive(TEntity row, bool active)
+    {
+        if (!active && !await JS.InvokeAsync<bool>("confirm", $"確定停用這筆{Def.Title}？停用後不再參與後續作業。")) return;
+        try
+        {
+            Svc.SetActive(Def, (int)(IdProp.GetValue(row) ?? 0), active, Actor());
+            Show("success", active ? "已啟用" : "已停用");
+            Reload();
+            await OnDataChanged.InvokeAsync();
+        }
+        catch (BusinessException ex)
+        {
+            Show("error", ex.Message);
+        }
+    }
+
+    // ── 匯出 ─────────────────────────────────────────────
+
+    private async Task Export()
+    {
+        var csv = Svc.ExportCsv(Def, rows);
+        var bytes = Encoding.UTF8.GetPreamble().Concat(Encoding.UTF8.GetBytes(csv)).ToArray();
+        await JS.InvokeVoidAsync("appDownload",
+            $"{Def.ExportName}_{DateTime.Now:yyyyMMdd_HHmmss}.csv", Convert.ToBase64String(bytes), "text/csv");
+    }
+
+    // ── 其他 ─────────────────────────────────────────────
+
+    private User Actor() => UserState.CurrentUser ?? throw new BusinessException("尚未選擇操作者");
+
+    private void Show(string type, string text)
+    {
+        msg = (type, text);
+        _ = AutoDismiss();
+    }
+
+    private async Task AutoDismiss()
+    {
+        var current = msg;
+        await Task.Delay(5000);
+        if (msg == current)
+        {
+            msg = null;
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+}

@@ -121,7 +121,9 @@
         ]),
         new("設定維護",
         [
-            new("database", "基本資料維護", "/master", "帳號・權限"),
+            new("account_balance", "銀行帳號基本資料", "/master/accounts", "帳號主檔"),
+            new("manage_accounts", "使用者基本資料", "/master/users", "使用者主檔"),
+            new("key", "帳號維護權限", "/master/permissions", "主辦・代理"),
             new("tune", "銀行格式設定", "/bank-formats", "轉檔格式"),
         ]),
     ];
@@ -132,7 +134,9 @@
     {
         var p when p.StartsWith("/balances") => "存摺餘額轉檔",
         var p when p.StartsWith("/suspense") => "暫收交易作業",
-        var p when p.StartsWith("/master") => "基本資料維護",
+        var p when p.StartsWith("/master/users") => "使用者基本資料",
+        var p when p.StartsWith("/master/permissions") => "帳號維護權限",
+        var p when p.StartsWith("/master") => "銀行帳號基本資料",
         var p when p.StartsWith("/bank-formats") => "銀行格式設定",
         _ => "資金管理系統",
     };

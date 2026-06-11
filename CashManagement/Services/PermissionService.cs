@@ -21,7 +21,7 @@ public class PermissionService(IDbContextFactory<AppDbContext> factory)
     public static List<string>? GetAccessibleAccountCodes(AppDbContext db, int userId, string? refDate = null)
     {
         var user = db.Users.AsNoTracking().FirstOrDefault(u => u.Id == userId);
-        if (user == null) return [];
+        if (user == null || !user.IsActive) return []; // 停用使用者視同無權限
         if (user.Role == "MANAGER") return null;
 
         var refD = string.IsNullOrEmpty(refDate) ? DateTime.Today.ToString("yyyy-MM-dd") : refDate;

@@ -34,7 +34,7 @@ public class BalanceService(IDbContextFactory<AppDbContext> factory)
 
         var curType = currency == "NTD" ? "TWD" : "FOREIGN";
         var accounts = db.BankAccounts.AsNoTracking()
-            .Where(a => a.IsSuspense && a.CurrencyType == curType)
+            .Where(a => a.IsActive && a.IsSuspense && a.CurrencyType == curType)
             .OrderBy(a => a.AccountCode).ToList();
         if (accessible != null)
         {

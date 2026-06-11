@@ -53,7 +53,7 @@ public class IngestService(IDbContextFactory<AppDbContext> factory)
         using var db = factory.CreateDbContext();
         var result = new PreviewResult { FileName = fileName };
 
-        var matched = db.BankAccounts.AsNoTracking().Where(a => a.ImportFileName == fileName).ToList();
+        var matched = db.BankAccounts.AsNoTracking().Where(a => a.IsActive && a.ImportFileName == fileName).ToList();
         if (matched.Count == 0) { result.Error = "檔名比對不到帳號"; return result; }
         if (matched.Count > 1) { result.Error = "檔名命中多個帳號"; return result; }
 
@@ -92,7 +92,7 @@ public class IngestService(IDbContextFactory<AppDbContext> factory)
         };
 
         // 1. 路由：檔名 → 單一帳號
-        var matched = db.BankAccounts.AsNoTracking().Where(a => a.ImportFileName == input.FileName).ToList();
+        var matched = db.BankAccounts.AsNoTracking().Where(a => a.IsActive && a.ImportFileName == input.FileName).ToList();
         if (matched.Count == 0) return Fail("檔名比對不到帳號，請於帳號基本資料設定轉檔檔名或手動指定");
         if (matched.Count > 1) return Fail("檔名命中多個帳號，請手動指定");
         var account = matched[0];

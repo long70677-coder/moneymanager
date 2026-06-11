@@ -18,8 +18,20 @@ public class CurrentUserState(IDbContextFactory<AppDbContext> factory)
     {
         if (Users.Count > 0) return;
         using var db = factory.CreateDbContext();
-        Users = db.Users.OrderByDescending(u => u.Role).ThenBy(u => u.UserCode).ToList();
+        Users = db.Users.Where(u => u.IsActive) // 停用使用者不可切換
+            .OrderByDescending(u => u.Role).ThenBy(u => u.UserCode).ToList();
         CurrentUser ??= Users.FirstOrDefault();
+    }
+
+    /// <summary>使用者主檔異動後重載清單（停用/新增/改名）；目前操作者被停用時退回第一位。</summary>
+    public void Refresh()
+    {
+        using var db = factory.CreateDbContext();
+        Users = db.Users.Where(u => u.IsActive)
+            .OrderByDescending(u => u.Role).ThenBy(u => u.UserCode).ToList();
+        CurrentUser = (CurrentUser == null ? null : Users.FirstOrDefault(u => u.Id == CurrentUser.Id))
+            ?? Users.FirstOrDefault();
+        OnChange?.Invoke();
     }
 
     public void SwitchUser(int userId)

@@ -1,0 +1,364 @@
+@page "/master/permissions"
+@using System.Text
+@inject MasterDataService MasterData
+@inject CurrentUserState UserState
+@inject IJSRuntime JS
+@implements IDisposable
+
+<PageTitle>帳號維護權限 - 銀行存款資金管理系統</PageTitle>
+
+<PageHeader Group="設定維護" Title="帳號維護權限"
+            Description="指派經辦對銀行帳號的維護權限（主辦／代理，代理可設有效期間）。主管不受帳號範圍限制、不需指派。" />
+
+@if (msg != null)
+{
+    <Toast Type="@msg.Value.Type" Text="@msg.Value.Text" OnClose="() => msg = null" />
+}
+
+<section class="app-card overflow-hidden">
+    <div class="px-5 py-4 flex items-center gap-3 border-b border-[#eef0f4]">
+        <span class="w-8 h-8 rounded-lg bg-[#eff4ff] text-[#2563EB] flex items-center justify-center shrink-0">
+            <span class="material-symbols-outlined text-[18px]">key</span>
+        </span>
+        <h3 class="text-sm font-semibold text-[#0f172a]">主辦／代理指派</h3>
+        <span class="text-xs text-[#7a7d85] bg-[#f1f5f9] px-2.5 py-1 rounded-full">共 @rows.Count 筆</span>
+        <div class="ml-auto flex items-center gap-2">
+            <button @onclick="Export" class="btn btn-outline btn-sm" disabled="@(rows.Count == 0)">
+                <span class="material-symbols-outlined text-[17px]">download</span>匯出 CSV
+            </button>
+            @if (IsManager)
+            {
+                <button @onclick="OpenCreate" class="btn btn-primary btn-sm">
+                    <span class="material-symbols-outlined text-[17px]">add</span>新增指派
+                </button>
+            }
+        </div>
+    </div>
+
+    @* 篩選列 *@
+    <div class="px-5 py-4 border-b border-[#eef0f4] bg-[#fafbfd]">
+        <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
+            <div class="flex flex-col gap-1">
+                <label class="text-[11px] font-medium text-[#64748b]">使用者</label>
+                <select class="form-input h-9 text-xs" value="@(filterUserId?.ToString() ?? "")"
+                        @onchange="e => OnFilterUser(e.Value)">
+                    <option value="">全部</option>
+                    @foreach (var u in users)
+                    {
+                        <option value="@u.Id">@u.UserCode @u.UserName</option>
+                    }
+                </select>
+            </div>
+            <div class="flex flex-col gap-1">
+                <label class="text-[11px] font-medium text-[#64748b]">銀行帳號</label>
+                <select class="form-input h-9 text-xs" value="@filterAccount"
+                        @onchange="e => OnFilterAccount(e.Value)">
+                    <option value="">全部</option>
+                    @foreach (var a in accounts)
+                    {
+                        <option value="@a.AccountCode">@a.AccountCode @a.AccountName</option>
+                    }
+                </select>
+            </div>
+            <div class="flex flex-col gap-1">
+                <label class="text-[11px] font-medium text-[#64748b]">維護類型</label>
+                <select class="form-input h-9 text-xs" value="@filterType"
+                        @onchange="e => OnFilterType(e.Value)">
+                    <option value="">全部</option>
+                    <option value="PRIMARY">主辦</option>
+                    <option value="AGENT">代理</option>
+                </select>
+            </div>
+            <div class="flex items-end">
+                <button @onclick="ClearFilters" class="btn btn-outline btn-sm w-full"
+                        disabled="@(filterUserId == null && filterAccount == "" && filterType == "")">
+                    <span class="material-symbols-outlined text-[16px]">filter_alt_off</span>清除篩選
+                </button>
+            </div>
+        </div>
+    </div>
+
+    @if (rows.Count == 0)
+    {
+        <EmptyState Icon="key" Title="查無指派資料"
+                    Hint="@(IsManager ? "點右上角「新增指派」建立第一筆主辦／代理設定。" : "調整篩選條件後再試。")" />
+    }
+    else
+    {
+        <div class="overflow-x-auto w-full">
+            <table class="w-full text-left border-collapse min-w-max">
+                <thead class="bg-[#f8fafc] border-b border-[#e6e8ef] text-xs font-semibold text-[#475569]">
+                    <tr>
+                        <th class="px-4 py-3 whitespace-nowrap">使用者代碼</th>
+                        <th class="px-4 py-3 whitespace-nowrap">姓名</th>
+                        <th class="px-4 py-3 whitespace-nowrap">帳號短碼</th>
+                        <th class="px-4 py-3 whitespace-nowrap">帳戶名稱</th>
+                        <th class="px-4 py-3 whitespace-nowrap">維護類型</th>
+                        <th class="px-4 py-3 whitespace-nowrap">有效期間（代理）</th>
+                        <th class="px-4 py-3 whitespace-nowrap">最後異動</th>
+                        @if (IsManager)
+                        {
+                            <th class="px-4 py-3 text-right whitespace-nowrap">操作</th>
+                        }
+                    </tr>
+                </thead>
+                <tbody class="text-sm divide-y divide-[#eef0f4]">
+                    @foreach (var r in rows)
+                    {
+                        <tr class="hover:bg-[#f8f9fc] transition-colors">
+                            <td class="px-4 py-2.5 font-mono text-xs font-medium text-[#0f172a]">@r.UserCode</td>
+                            <td class="px-4 py-2.5 text-[#44474e]">@r.UserName</td>
+                            <td class="px-4 py-2.5 font-mono text-xs">@r.AccountCode</td>
+                            <td class="px-4 py-2.5 text-[#44474e]">@(r.AccountName ?? "—")</td>
+                            <td class="px-4 py-2.5">
+                                <span class="@($"px-2 py-0.5 rounded-md text-xs border {(r.ManagerType == "PRIMARY" ? "bg-[#f0fdf4] text-[#166534] border-[#bbf7d0]" : "bg-[#fffbeb] text-[#b45309] border-[#fde68a]")}")">
+                                    @(r.ManagerType == "PRIMARY" ? "主辦" : "代理")
+                                </span>
+                            </td>
+                            <td class="px-4 py-2.5 font-mono tabular-nums text-xs text-[#64748b]">
+                                @(r.ManagerType == "AGENT" ? $"{r.ValidFrom ?? "不限"} ~ {r.ValidTo ?? "不限"}" : "—")
+                            </td>
+                            <td class="px-4 py-2.5 text-xs text-[#9aa0ad]">@r.UpdatedBy・@r.UpdatedAt.ToString("yyyy-MM-dd HH:mm")</td>
+                            @if (IsManager)
+                            {
+                                <td class="px-4 py-2.5 text-right whitespace-nowrap">
+                                    <button @onclick="() => OpenEdit(r)"
+                                            class="inline-flex items-center gap-0.5 text-[#2563EB] hover:bg-[#eff6ff] rounded-md px-2 py-1 text-xs transition-colors mr-1">
+                                        <span class="material-symbols-outlined text-[15px]">edit</span>編輯
+                                    </button>
+                                    <button @onclick="() => Delete(r)"
+                                            class="inline-flex items-center gap-0.5 text-[#b91c1c] hover:bg-[#fef2f2] rounded-md px-2 py-1 text-xs transition-colors">
+                                        <span class="material-symbols-outlined text-[15px]">delete</span>刪除
+                                    </button>
+                                </td>
+                            }
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+</section>
+
+@* 新增／修改指派 Modal *@
+@if (formOpen)
+{
+    <Modal Icon="@(editId == null ? "add_circle" : "edit")" OnClose="CloseForm">
+        <Title>@(editId == null ? "新增指派" : "修改指派")</Title>
+        <ChildContent>
+            <div class="p-5 grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div class="flex flex-col gap-1.5">
+                    <label class="text-xs font-medium text-[#44474e]">使用者 <span class="text-[#dc2626]">*</span></label>
+                    <select class="form-input" value="@formUserId" @onchange="e => OnFormUser(e.Value)">
+                        <option value="0">— 請選擇 —</option>
+                        @foreach (var u in users)
+                        {
+                            <option value="@u.Id">@u.UserCode @u.UserName（@Roles.Labels.GetValueOrDefault(u.Role, u.Role)）</option>
+                        }
+                    </select>
+                    <p class="text-[11px] text-[#9aa0ad]">主管本來就不受帳號範圍限制，一般僅需指派經辦</p>
+                </div>
+                <div class="flex flex-col gap-1.5">
+                    <label class="text-xs font-medium text-[#44474e]">銀行帳號 <span class="text-[#dc2626]">*</span></label>
+                    <select class="form-input" value="@formAccount" @onchange="e => OnFormAccount(e.Value)">
+                        <option value="">— 請選擇 —</option>
+                        @foreach (var a in accounts)
+                        {
+                            <option value="@a.AccountCode">@a.AccountCode @a.AccountName</option>
+                        }
+                    </select>
+                </div>
+                <div class="flex flex-col gap-1.5">
+                    <label class="text-xs font-medium text-[#44474e]">維護類型</label>
+                    <select class="form-input" value="@formType" @onchange="e => OnFormType(e.Value)">
+                        <option value="PRIMARY">主辦</option>
+                        <option value="AGENT">代理</option>
+                    </select>
+                </div>
+                @if (formType == "AGENT")
+                {
+                    <div class="flex flex-col gap-1.5">
+                        <label class="text-xs font-medium text-[#44474e]">代理有效期間（起迄皆可不限）</label>
+                        <div class="flex items-center gap-2">
+                            <input type="date" class="form-input flex-1 min-w-0" value="@formFrom" @onchange="e => OnFormFrom(e.Value)" />
+                            <span class="text-[#9aa0ad]">~</span>
+                            <input type="date" class="form-input flex-1 min-w-0" value="@formTo" @onchange="e => OnFormTo(e.Value)" />
+                        </div>
+                    </div>
+                }
+            </div>
+        </ChildContent>
+        <Footer>
+            <button @onclick="CloseForm" class="btn btn-outline">取消</button>
+            <button @onclick="Save" class="btn btn-primary">
+                <span class="material-symbols-outlined text-[18px]">@(editId == null ? "add" : "save")</span>
+                @(editId == null ? "新增" : "儲存修改")
+            </button>
+        </Footer>
+    </Modal>
+}
+
+@code {
+    private List<AssignmentRow> rows = [];
+    private List<User> users = [];
+    private List<BankAccount> accounts = [];
+    private (string Type, string Text)? msg;
+
+    private int? filterUserId;
+    private string filterAccount = "";
+    private string filterType = "";
+
+    private bool formOpen;
+    private int? editId;
+    private int formUserId;
+    private string formAccount = "";
+    private string formType = "PRIMARY";
+    private string formFrom = "";
+    private string formTo = "";
+
+    private bool IsManager => UserState.CurrentUser?.Role == Roles.Manager;
+
+    protected override void OnInitialized()
+    {
+        UserState.OnChange += HandleUserChanged;
+        users = MasterData.GetActiveUsers();
+        accounts = MasterData.GetActiveAccounts();
+        Reload();
+    }
+
+    public void Dispose() => UserState.OnChange -= HandleUserChanged;
+    private void HandleUserChanged() => InvokeAsync(StateHasChanged);
+
+    private void Reload() => rows = MasterData.GetAssignments(filterUserId,
+        filterAccount.Length > 0 ? filterAccount : null,
+        filterType.Length > 0 ? filterType : null);
+
+    // ── 篩選 ─────────────────────────────────────────────
+
+    private void OnFilterUser(object? v)
+    {
+        filterUserId = int.TryParse(v?.ToString(), out var id) && id > 0 ? id : null;
+        Reload();
+    }
+
+    private void OnFilterAccount(object? v) { filterAccount = v?.ToString() ?? ""; Reload(); }
+    private void OnFilterType(object? v) { filterType = v?.ToString() ?? ""; Reload(); }
+
+    private void ClearFilters()
+    {
+        filterUserId = null;
+        filterAccount = filterType = "";
+        Reload();
+    }
+
+    // ── 表單 ─────────────────────────────────────────────
+
+    private void OpenCreate()
+    {
+        editId = null;
+        formUserId = 0;
+        formAccount = "";
+        formType = "PRIMARY";
+        formFrom = formTo = "";
+        formOpen = true;
+    }
+
+    private void OpenEdit(AssignmentRow r)
+    {
+        editId = r.Id;
+        formUserId = r.UserId;
+        formAccount = r.AccountCode;
+        formType = r.ManagerType;
+        formFrom = r.ValidFrom ?? "";
+        formTo = r.ValidTo ?? "";
+        formOpen = true;
+    }
+
+    private void CloseForm() => formOpen = false;
+
+    private void OnFormUser(object? v) => formUserId = int.TryParse(v?.ToString(), out var id) ? id : 0;
+    private void OnFormAccount(object? v) => formAccount = v?.ToString() ?? "";
+    private void OnFormType(object? v) => formType = v?.ToString() ?? "PRIMARY";
+    private void OnFormFrom(object? v) => formFrom = v?.ToString() ?? "";
+    private void OnFormTo(object? v) => formTo = v?.ToString() ?? "";
+
+    private void Save()
+    {
+        try
+        {
+            var m = new AccountManager
+            {
+                Id = editId ?? 0,
+                UserId = formUserId,
+                AccountCode = formAccount,
+                ManagerType = formType,
+                ValidFrom = formFrom.Length > 0 ? formFrom : null,
+                ValidTo = formTo.Length > 0 ? formTo : null,
+            };
+            if (editId == null) MasterData.CreateAssignment(m, Actor());
+            else MasterData.UpdateAssignment(m, Actor());
+
+            Show("success", editId == null ? "已新增指派" : "已更新指派");
+            formOpen = false;
+            Reload();
+        }
+        catch (BusinessException e)
+        {
+            Show("error", e.Message);
+        }
+    }
+
+    private async Task Delete(AssignmentRow r)
+    {
+        if (!await JS.InvokeAsync<bool>("confirm", $"確定刪除 {r.UserCode} 對帳號 {r.AccountCode} 的{(r.ManagerType == "PRIMARY" ? "主辦" : "代理")}指派？")) return;
+        try
+        {
+            MasterData.DeleteAssignment(r.Id, Actor());
+            Show("success", "已刪除指派");
+            Reload();
+        }
+        catch (BusinessException e)
+        {
+            Show("error", e.Message);
+        }
+    }
+
+    // ── 匯出 ─────────────────────────────────────────────
+
+    private async Task Export()
+    {
+        var csv = MasterMaintenanceService.ToCsv(
+            ["使用者代碼", "姓名", "帳號短碼", "帳戶名稱", "維護類型", "有效起日", "有效迄日", "最後異動人", "最後異動時間"],
+            rows.Select(r => (IEnumerable<string>)
+            [
+                r.UserCode, r.UserName, r.AccountCode, r.AccountName ?? "",
+                r.ManagerType == "PRIMARY" ? "主辦" : "代理",
+                r.ValidFrom ?? "", r.ValidTo ?? "",
+                r.UpdatedBy, r.UpdatedAt.ToString("yyyy-MM-dd HH:mm:ss"),
+            ]));
+        var bytes = Encoding.UTF8.GetPreamble().Concat(Encoding.UTF8.GetBytes(csv)).ToArray();
+        await JS.InvokeVoidAsync("appDownload",
+            $"帳號維護權限_{DateTime.Now:yyyyMMdd_HHmmss}.csv", Convert.ToBase64String(bytes), "text/csv");
+    }
+
+    // ── 其他 ─────────────────────────────────────────────
+
+    private User Actor() => UserState.CurrentUser ?? throw new BusinessException("尚未選擇操作者");
+
+    private void Show(string type, string text)
+    {
+        msg = (type, text);
+        _ = AutoDismiss();
+    }
+
+    private async Task AutoDismiss()
+    {
+        var current = msg;
+        await Task.Delay(5000);
+        if (msg == current)
+        {
+            msg = null;
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+}

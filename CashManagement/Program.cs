@@ -1,6 +1,7 @@
 using CashManagement.Components;
 using CashManagement.Data;
 using CashManagement.Services;
+using CashManagement.Services.Master;
 using Microsoft.EntityFrameworkCore;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -25,6 +26,7 @@ builder.Services.AddSingleton<BalanceService>();
 builder.Services.AddSingleton<IngestService>();
 builder.Services.AddSingleton<BankFormatService>();
 builder.Services.AddSingleton<MasterDataService>();
+builder.Services.AddSingleton<MasterMaintenanceService>(); // 基本資料維護框架（SD_MASTER_FRAMEWORK.md）
 
 var app = builder.Build();
 

@@ -1,0 +1,48 @@
+@page "/master/users"
+@using Microsoft.EntityFrameworkCore
+@inject CurrentUserState UserState
+
+<PageTitle>使用者基本資料 - 銀行存款資金管理系統</PageTitle>
+
+<PageHeader Group="設定維護" Title="使用者基本資料"
+            Description="維護使用者主檔（經辦／主管）。被帳號維護權限參照的使用者不可刪除，請改用停用；停用後不可切換為操作者、權限視同無。系統至少保留一位啟用中的主管。" />
+
+<MasterPage TEntity="User" Def="@def" OnDataChanged="UserState.Refresh" />
+
+@code {
+    private static readonly MasterDef<User> def = new()
+    {
+        Title = "使用者",
+        Icon = "manage_accounts",
+        ExportName = "使用者基本資料",
+        Fields =
+        [
+            new() { Key = "userCode", Label = "使用者代碼", Member = u => u.UserCode,
+                    Required = true, InUniqueKey = true, Mono = true, Editable = false,
+                    Placeholder = "例：U001", FormHint = "業務主鍵，建立後不可修改" },
+            new() { Key = "userName", Label = "姓名", Member = u => u.UserName, Required = true },
+            new() { Key = "role", Label = "角色", Member = u => u.Role, Kind = FieldKind.Select,
+                    Options = [("STAFF", "經辦"), ("MANAGER", "主管")],
+                    FormHint = "主管可維護基本資料且不受帳號權限範圍限制" },
+            new() { Key = "isActive", Label = "啟用", Member = u => u.IsActive, Kind = FieldKind.Bool,
+                    ShowInForm = false },
+        ],
+        Validate = (db, u, isNew) =>
+        {
+            // 防鎖死：變更後系統仍須有至少一位啟用中的主管
+            var stillHasManager = (u.Role == Roles.Manager && u.IsActive)
+                || db.Users.AsNoTracking().Any(x => x.Id != u.Id && x.Role == Roles.Manager && x.IsActive);
+            if (!stillHasManager)
+                throw new BusinessException("系統至少需保留一位啟用中的主管，無法完成此變更");
+        },
+        DeleteBlockReason = (db, u) =>
+        {
+            if (db.AccountManagers.Any(m => m.UserId == u.Id))
+                return $"使用者 {u.UserCode} 已被帳號維護權限參照，無法刪除，請改用「停用」";
+            if (u.Role == Roles.Manager && u.IsActive
+                && !db.Users.Any(x => x.Id != u.Id && x.Role == Roles.Manager && x.IsActive))
+                return "此為系統唯一啟用中的主管，無法刪除";
+            return null;
+        },
+    };
+}
