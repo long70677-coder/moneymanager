@@ -1,7 +1,7 @@
 using System.Linq.Expressions;
-using System.Text;
 using CashManagement.Data;
 using CashManagement.Domain;
+using ClosedXML.Excel;
 using Microsoft.EntityFrameworkCore;
 
 namespace CashManagement.Services.Master;
@@ -103,27 +103,77 @@ public class MasterMaintenanceService(IDbContextFactory<AppDbContext> factory)
         db.SaveChanges();
     }
 
-    /// <summary>匯出 CSV（UTF-8 BOM；ShowInList 欄位；顯示值與列表一致）。</summary>
-    public string ExportCsv<TEntity>(MasterDef<TEntity> def, IEnumerable<TEntity> rows)
+    /// <summary>匯出 Excel（.xlsx）：ShowInList 欄位；數值欄以數字型別輸出，其餘採與列表一致的顯示值。</summary>
+    public byte[] ExportExcel<TEntity>(MasterDef<TEntity> def, IEnumerable<TEntity> rows)
         where TEntity : class, new()
     {
         var fields = def.ListFields.ToList();
-        var sb = new StringBuilder();
-        sb.AppendLine(string.Join(",", fields.Select(f => CsvEscape(f.Label))));
-        foreach (var row in rows)
-            sb.AppendLine(string.Join(",", fields.Select(f => CsvEscape(f.DisplayValue(row)))));
-        return sb.ToString();
+        return BuildWorkbook(def.Title,
+            fields.Select(f => f.Label).ToList(),
+            rows.Select(r => (IReadOnlyList<object?>)fields
+                .Select(f => f.GetValue(r) is decimal or int or long or double ? f.GetValue(r) : f.DisplayValue(r))
+                .ToList()));
     }
 
-    /// <summary>自訂頁（主從式）匯出共用：自組表頭與列。</summary>
-    public static string ToCsv(IEnumerable<string> headers, IEnumerable<IEnumerable<string>> rows)
+    /// <summary>
+    /// 匯出共用（自訂頁亦可用）：標題列粗體＋底色＋凍結、欄寬自動、數值/日期欄以原生型別輸出。
+    /// </summary>
+    public static byte[] BuildWorkbook(string sheetName, IReadOnlyList<string> headers, IEnumerable<IReadOnlyList<object?>> rows)
     {
-        var sb = new StringBuilder();
-        sb.AppendLine(string.Join(",", headers.Select(CsvEscape)));
+        using var wb = new XLWorkbook();
+        var ws = wb.Worksheets.Add(sheetName.Length > 31 ? sheetName[..31] : sheetName);
+
+        for (var c = 0; c < headers.Count; c++)
+            ws.Cell(1, c + 1).Value = headers[c];
+        var headerRange = ws.Range(1, 1, 1, headers.Count);
+        headerRange.Style.Font.Bold = true;
+        headerRange.Style.Fill.BackgroundColor = XLColor.FromHtml("#F1F5F9");
+        headerRange.Style.Border.BottomBorder = XLBorderStyleValues.Thin;
+
+        var r = 2;
         foreach (var row in rows)
-            sb.AppendLine(string.Join(",", row.Select(CsvEscape)));
-        return sb.ToString();
+        {
+            for (var c = 0; c < row.Count; c++)
+            {
+                var cell = ws.Cell(r, c + 1);
+                switch (row[c])
+                {
+                    case null:
+                        break;
+                    case decimal d:
+                        cell.Value = d;
+                        cell.Style.NumberFormat.Format = "#,##0.######";
+                        break;
+                    case int i:
+                        cell.Value = i;
+                        break;
+                    case long l:
+                        cell.Value = l;
+                        break;
+                    case double dbl:
+                        cell.Value = dbl;
+                        break;
+                    case DateTime dt:
+                        cell.Value = dt;
+                        cell.Style.DateFormat.Format = "yyyy-mm-dd hh:mm:ss";
+                        break;
+                    default:
+                        cell.Value = row[c]!.ToString();
+                        break;
+                }
+            }
+            r++;
+        }
+
+        ws.SheetView.FreezeRows(1);
+        ws.Columns(1, headers.Count).AdjustToContents();
+
+        using var ms = new MemoryStream();
+        wb.SaveAs(ms);
+        return ms.ToArray();
     }
+
+    public const string ExcelMime = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
 
     public static void RequireManager(User? actor)
     {
@@ -231,12 +281,5 @@ public class MasterMaintenanceService(IDbContextFactory<AppDbContext> factory)
         if (t == typeof(int)) return int.TryParse(raw, out var i) ? i : 0;
         if (t == typeof(decimal)) return decimal.TryParse(raw, out var d) ? d : 0m;
         return 0;
-    }
-
-    private static string CsvEscape(string s)
-    {
-        if (s.Contains(',') || s.Contains('"') || s.Contains('\n') || s.Contains('\r'))
-            return '"' + s.Replace("\"", "\"\"") + '"';
-        return s;
     }
 }

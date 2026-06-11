@@ -14,7 +14,7 @@
 |---|------|-----------|
 | 1 | 每個主檔都要 CRUD | 泛型服務 `MasterMaintenanceService` 統一實作，主檔僅掛驗證鉤子 |
 | 2 | 欄位都要可篩選 | 欄位定義宣告 `Filterable`，框架依欄位型別自動長出篩選列（文字含查/下拉/是否/日期區間），並轉成 **EF Core `IQueryable` 條件**（DB 端過濾，非記憶體過濾） |
-| 3 | 資料都要可匯出 | 與列表同一份欄位定義產出 CSV（UTF-8 含 BOM，Excel 直開不亂碼），內容＝**目前篩選後**結果 |
+| 3 | 資料都要可匯出 | 與列表同一份欄位定義產出 **Excel（.xlsx，ClosedXML）**：標題列凍結＋粗體底色、欄寬自動、數值/日期以原生型別輸出；內容＝**目前篩選後**結果 |
 | 4 | 主檔會一直增加 | 新主檔 = 實體類別 + 一份 `MasterDef` 欄位定義 + 一頁 `<MasterPage>`（約 30–60 行） |
 | 5 | 主檔被交易資料參照 | 內建「**有參照只能停用、不能刪除**」規則（軟刪除 `IsActive`），刪除前鉤子檢查 |
 | 6 | 維護要受權限控管 | 維護動作（新增/修改/刪除/停用）限 **MANAGER（主管）**；STAFF（經辦）可查詢、篩選、匯出 |
@@ -111,9 +111,9 @@ Data/Entities.cs                    ← 實體 + IAuditable / ISoftDelete 介面
 | `Update(def, entity, actor)` | 同上，但唯一鍵查重排除自身；**只回寫 `Editable` 欄位**，非可編輯欄位以資料庫現值為準 |
 | `Delete(def, id, actor)` | `DeleteBlockReason` 有訊息 → 丟 `BusinessException`（訊息含「請改用停用」）；無 → 實體刪除 |
 | `SetActive(def, id, active, actor)` | 軟刪除開關（限 `ISoftDelete` 實體）；切換後仍跑 `Validate` 鉤子（例：不可停用最後一位主管） |
-| `ExportCsv(def, rows)` | `ShowInList` 欄位 → CSV；Bool 輸出 是/否、Select 輸出中文標籤；UTF-8 BOM；跳脫逗號/引號/換行 |
+| `ExportExcel(def, rows)` | `ShowInList` 欄位 → .xlsx；Bool 輸出 是/否、Select 輸出中文標籤；數值/日期欄以原生型別輸出（Excel 內可直接加總/排序） |
 
-匯出下載：服務回傳字串 → 頁面轉 base64 → JS `appDownload()`（`App.razor` 內建小函式）觸發瀏覽器下載，檔名 `{ExportName}_{yyyyMMdd_HHmmss}.csv`。
+匯出下載：服務回傳 byte[] → 頁面轉 base64 → JS `appDownload()`（`App.razor` 內建小函式）觸發瀏覽器下載，檔名 `{ExportName}_{yyyyMMdd_HHmmss}.xlsx`。自訂頁共用 `MasterMaintenanceService.BuildWorkbook(表名, 表頭, 列)`。
 
 ---
 
@@ -167,7 +167,7 @@ Data/Entities.cs                    ← 實體 + IAuditable / ISoftDelete 介面
 - 一筆 = 使用者 × 帳號 × 類型（主辦 PRIMARY／代理 AGENT），唯一鍵三欄組合（DB 已有 unique index，服務先查重給友善訊息）。
 - 代理可填有效期間（起迄皆選填；都填時起 ≤ 迄）；**主辦不適用期間**（儲存時清空）。
 - 下拉只列**啟用中**的使用者與帳號；主管角色不需指派（不過濾擋住，但 UI 提示主管本來就不受限）。
-- 篩選：使用者、帳號、類型；匯出沿用框架 CSV 工具。
+- 篩選：使用者、帳號、類型；匯出沿用框架 Excel 工具（`BuildWorkbook`）。
 - 刪除：指派紀錄無下游參照，允許實體刪除（需確認）。
 
 ---
@@ -208,6 +208,6 @@ Data/Entities.cs                    ← 實體 + IAuditable / ISoftDelete 介面
 
 1. **審計軌跡深度**：目前留「最後異動人/時」；若稽核要求逐筆異動歷程（who changed what），需另建 audit log 表——框架已集中寫入點，屆時只改服務一處。
 2. **帳號維護權限是否也要軟刪除**：本期視為關聯資料採實體刪除；若日後要保留指派歷史，改掛 `ISoftDelete` 即可。
-3. **匯出格式**：目前 CSV；若要求含格式的 Excel（凍結窗格、欄寬），再引入 ClosedXML 於服務端替換，頁面不動。
+3. ~~**匯出格式**：目前 CSV；若要求含格式的 Excel，再引入 ClosedXML 替換。~~ ✅ 已決議並完成：改為 Excel（.xlsx，ClosedXML 0.105），凍結標題列、欄寬自動、數值原生型別。
 4. **經辦是否可匯出**：本期開放（資料僅主檔非交易機敏）；若資安要求收斂，改一行權限檢核。
 5. **銀行格式設定頁遷移**：`/bank-formats` 欄位含 JSON 對應編輯器，屬複雜表單，建議維持手刻；是否遷移由後續決定。

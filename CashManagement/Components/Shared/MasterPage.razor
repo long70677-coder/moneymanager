@@ -1,7 +1,6 @@
 @* 基本資料維護共用畫面：篩選列＋表格（排序/分頁）＋新增/修改 Modal＋刪除/停用＋匯出 CSV。
    一份 MasterDef 欄位定義驅動全部行為（SD_MASTER_FRAMEWORK.md）。 *@
 @typeparam TEntity where TEntity : class, new()
-@using System.Text
 @using System.Reflection
 @using CashManagement.Services.Master
 @inject MasterMaintenanceService Svc
@@ -23,7 +22,7 @@
         <span class="text-xs text-[#7a7d85] bg-[#f1f5f9] px-2.5 py-1 rounded-full">共 @rows.Count 筆</span>
         <div class="ml-auto flex items-center gap-2">
             <button @onclick="Export" class="btn btn-outline btn-sm" disabled="@(rows.Count == 0)">
-                <span class="material-symbols-outlined text-[17px]">download</span>匯出 CSV
+                <span class="material-symbols-outlined text-[17px]">download</span>匯出 Excel
             </button>
             @if (IsManager)
             {
@@ -463,10 +462,10 @@
 
     private async Task Export()
     {
-        var csv = Svc.ExportCsv(Def, rows);
-        var bytes = Encoding.UTF8.GetPreamble().Concat(Encoding.UTF8.GetBytes(csv)).ToArray();
+        var bytes = Svc.ExportExcel(Def, rows);
         await JS.InvokeVoidAsync("appDownload",
-            $"{Def.ExportName}_{DateTime.Now:yyyyMMdd_HHmmss}.csv", Convert.ToBase64String(bytes), "text/csv");
+            $"{Def.ExportName}_{DateTime.Now:yyyyMMdd_HHmmss}.xlsx", Convert.ToBase64String(bytes),
+            MasterMaintenanceService.ExcelMime);
     }
 
     // ── 其他 ─────────────────────────────────────────────
