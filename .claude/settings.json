@@ -7,7 +7,7 @@
           {
             "type": "command",
             "shell": "powershell",
-            "command": "$p = Join-Path $env:CLAUDE_PROJECT_DIR '開發索引.md'; if (Test-Path $p) { [pscustomobject]@{ systemMessage = [string](Get-Content -Raw -Encoding UTF8 $p) } | ConvertTo-Json -Compress }",
+            "command": "[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; $p = Join-Path $env:CLAUDE_PROJECT_DIR '開發索引.md'; if (Test-Path $p) { [pscustomobject]@{ systemMessage = [string](Get-Content -Raw -Encoding UTF8 $p) } | ConvertTo-Json -Compress }",
             "statusMessage": "載入開發索引…"
           }
         ]
