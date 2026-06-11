@@ -7,3 +7,6 @@ CashManagement/bin/
 CashManagement/obj/
 CashManagement/App_Data/
 
+# CodeGraph 本地索引（機器本地、可重建，不進版控）
+.codegraph/
+
