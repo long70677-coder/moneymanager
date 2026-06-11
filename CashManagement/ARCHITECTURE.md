@@ -56,7 +56,7 @@ CashManagement/
 │   ├─ BankFormatService.cs
 │   ├─ MasterDataService.cs# 帳號維護權限（主辦/代理指派；主從式自訂頁）
 │   ├─ Master/             # 基本資料維護框架：MasterDef（欄位 metadata）＋ MasterMaintenanceService
-│   │                      #（泛型 CRUD/篩選/停用/匯出；見 ../SD_MASTER_FRAMEWORK.md）
+│   │                      #（泛型 CRUD/篩選/停用/匯出；見 ../docs/SD/SD_MASTER_FRAMEWORK.md）
 │   └─ Parsing/            # DelimitedParser、MappingHelper（民國年/金額）、ParsedProfile、ParserRegistry
 ├─ Components/
 │   ├─ Layout/MainLayout.razor   # 側欄+頂部列+操作者切換
@@ -67,13 +67,13 @@ CashManagement/
 
 ### 基本資料維護
 新增一個基本資料維護畫面＝實體（掛 `IAuditable`/`ISoftDelete`）＋一份 `MasterDef` 欄位定義＋`<MasterPage>` 一行，
-查詢/篩選/CRUD/停用/匯出 CSV 全自動具備；規格與 SOP 見 `../SD_MASTER_FRAMEWORK.md`。
+查詢/篩選/CRUD/停用/匯出 CSV 全自動具備；規格與 SOP 見 `../docs/SD/SD_MASTER_FRAMEWORK.md`。
 維護動作限 MANAGER；被參照的主檔不可刪除、只能停用（停用帳號/使用者自動排除於暫收、轉檔、權限判斷之外）。
 
 ## 4. 與原型 (suspense-app) 的關係
 
 - 原型保留於 `../suspense-app(暫停更新的舊版)`，定位為**已驗證需求的可運行規格**；新功能一律做在本專案，原型**不再更新**。
-- 設計文件沿用 repo 根目錄：`FUN2.1.1_轉檔架構設計.md`、`SD_DB_DESIGN.md`、`FUN2.1.1_測試文件.md`。
+- 設計文件位於 repo 的 `docs/`：`docs/FUN/FUN2.1.1_轉檔架構設計.md`、`docs/SD/SD_DB_DESIGN.md`、`docs/FUN/FUN2.1.1_測試文件.md`。
 - 資料表邏輯模型 1:1 移植（命名改 .NET 慣例 PascalCase，唯一鍵全數保留）。
 
 ## 5. 資料庫切換（SQLite → SQL Server）

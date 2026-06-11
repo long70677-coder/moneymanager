@@ -10,8 +10,19 @@
 ## 開始開發前必讀
 
 1. `CashManagement/ARCHITECTURE.md` — 分層架構、鐵律、設計系統、SQL Server 切換步驟
-2. `FUN2.1.1_轉檔架構設計.md`、`SD_DB_DESIGN.md` — 設計文件（兩版本共用）
-3. `FUN2.1.1_測試文件.md` — 測試案例（20 案＋端到端走查）
+2. `docs/FUN/FUN2.1.1_轉檔架構設計.md`、`docs/SD/SD_DB_DESIGN.md` — 設計文件（兩版本共用）
+3. `docs/FUN/FUN2.1.1_測試文件.md` — 測試案例（20 案＋端到端走查）
+
+## 文件結構
+
+| 路徑 | 內容 |
+|---|---|
+| `docs/URS/` | 使用者需求規格（URS2.4.1 投資款收付、URS2.90.202 銀行帳號基本資料） |
+| `docs/SD/` | 系統設計（SD_DB_DESIGN 資料表、SD_MASTER_FRAMEWORK 主檔框架） |
+| `docs/FUN/` | 功能設計與測試（FUN2.1.1 轉檔架構設計、測試文件） |
+| `docs/流程圖/` | 事務／工作流程圖 |
+| `funcList.md` | 全系統功能清單（FUN 階層） |
+| `開發索引.md` | 功能 ↔ 檔案／函式對照（開場自動顯示） |
 
 ## 啟動正式版
 
