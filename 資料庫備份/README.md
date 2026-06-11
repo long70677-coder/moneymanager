@@ -7,19 +7,33 @@
 | 檔案 | 說明 |
 |------|------|
 | `cash.seed.db` | 開發用 SQLite 種子資料庫（最新 schema＋示範資料：銀行、對照碼、幣別、匯率、假日、銀行帳號等基本資料）|
-| `還原資料庫.ps1` | 一鍵還原腳本，將 `cash.seed.db` 複製到 `CashManagement/App_Data/cash.db` |
+| `還原資料庫.bat` | **雙擊即可還原**，純 `copy` 實作，不需要安裝任何 PowerShell（推薦給公司電腦）|
+| `還原資料庫.ps1` | PowerShell 版還原腳本，將 `cash.seed.db` 複製到 `CashManagement/App_Data/cash.db` |
 
 ## 還原步驟
 
-1. clone 專案後，於本資料夾執行：
-   ```powershell
-   pwsh -ExecutionPolicy Bypass -File .\還原資料庫.ps1
-   ```
-   （若系統已有 `cash.db`，腳本會先自動備份成 `cash.db.bak-時間戳` 再覆蓋。加 `-Force` 可略過備份直接覆蓋。）
-2. 到 `CashManagement` 目錄啟動系統：
-   ```powershell
-   dotnet run --launch-profile http
-   ```
+clone 專案後，擇一執行（三種任選，效果相同）：
+
+**方式一：雙擊 bat（最簡單，免 PowerShell）**
+直接在檔案總管雙擊 `還原資料庫.bat`。若已有 `cash.db`，會先備份成 `cash.db.bak` 再覆蓋。
+
+**方式二：Windows PowerShell 5.1（內建，不需安裝 PowerShell 7）**
+於本資料夾執行——注意是 `powershell` 不是 `pwsh`：
+```powershell
+powershell -ExecutionPolicy Bypass -File .\還原資料庫.ps1
+```
+
+**方式三：PowerShell 7（pwsh）**
+```powershell
+pwsh -ExecutionPolicy Bypass -File .\還原資料庫.ps1
+```
+
+> .ps1 版若系統已有 `cash.db`，會先備份成 `cash.db.bak-時間戳` 再覆蓋；加 `-Force` 可略過備份直接覆蓋。
+
+還原後到 `CashManagement` 目錄啟動系統：
+```
+dotnet run --launch-profile http
+```
 
 ## 注意事項
 
